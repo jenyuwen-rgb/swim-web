@@ -1,244 +1,322 @@
-// pages/index.js
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceDot,
 } from "recharts";
 
-/* ---------- helpers ---------- */
-const STROKES = [
-  "50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式",
-  "100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式",
-  "200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式",
-  "200公尺混合式",
-];
+/* ===== Utils ===== */
+const fmtTime = (s) => {
+  if (!s && s !== 0) return "";
+  const sec = Number(s);
+  if (Number.isNaN(sec)) return "";
+  const m = Math.floor(sec / 60);
+  const r = sec - m * 60;
+  return m ? `${m}:${r.toFixed(2).padStart(5, "0")}` : r.toFixed(2);
+};
 
-const fmtTime = (s) => (s ? (+s).toFixed(2) : "");
-
-// '20250726' -> Date(2025, 06, 26)
+// 20250726 → Date(2025, 06, 26)
 const parseYYYYMMDD = (v) => {
   const s = String(v || "");
-  const y = +s.slice(0, 4), m = +s.slice(4, 6) - 1, d = +s.slice(6, 8);
+  const y = +s.slice(0, 4),
+    m = +s.slice(4, 6) - 1,
+    d = +s.slice(6, 8);
   return new Date(y, m, d);
 };
-// X 軸：'25/07'
+
+// yy/mm（例：25/07）
 const xLabel = (v) => {
   const s = String(v || "");
   return `${s.slice(2, 4)}/${s.slice(4, 6)}`;
 };
 
-// 由「項目」抽出泳姿與距離（只取 50/100/200公尺）
-const extractStyle = (cat) => (["蛙式","仰式","自由式","蝶式"].find(k => String(cat).includes(k)) || "");
-const extractDistance = (cat) => {
-  const m = String(cat).match(/(\d+公尺)/);
-  return m ? m[1] : "";
+// 把「11 & 12歲級女子組200公尺蛙式」→ 距離「200公尺」、泳式「蛙式」
+const extractStyleAndDistance = (item) => {
+  const raw = String(item?.["項目"] || "");
+  const styles = ["蛙式", "仰式", "自由式", "蝶式"];
+  const style = styles.find((k) => raw.includes(k)) || "";
+  let left = raw.replace(style, ""); // 去掉泳式
+  // 拿距離（xx公尺）
+  const m = left.match(/(\d+)\s*公尺/);
+  const dist = m ? `${m[1]}公尺` : "";
+  return { style, dist };
 };
 
-// 依你的規則簡化賽事名稱
-const simplifyMeet = (raw) => {
-  let result = String(raw || "");
-  result = result.replace(/^\d{4}/, "");
-  result = result.replace(/^\d{3}/, "");
-
-  const repl = [
-    ["臺中市114年市長盃水上運動競賽(游泳項目)", "台中市長盃"],
-    ["全國冬季短水道游泳錦標賽", "全國冬短"],
-    ["全國總統盃暨美津濃游泳錦標賽", "全國總統盃"],
-    ["全國總統盃暨美津濃分齡游泳錦標賽", "全國總統盃"],
-    ["冬季短水道", "冬短"],
-    ["全國運動會臺南市游泳代表隊選拔賽", "台南全運會選拔"],
-    ["全國青少年游泳錦標賽", "全國青少年"],
-    ["臺中市議長盃", "台中議長盃"],
-    ["臺中市市長盃", "台中市長盃"],
-    ["(游泳項目)", ""],
-    ["春季游泳錦標賽", "春長"],
-    ["年全國E世代青少年", "E世代"],
-    ["年臺南市市長盃短水道", "台南市長盃"],
-    ["臺南市中小學", "台南中小學"],
-    ["年臺南市委員盃", "台南委員盃"],
-    ["臺南市全國運動會游泳選拔賽", "台南全運會選拔"],
-    ["游泳錦標賽", ""],
-  ];
-  for (const [a, b] of repl) result = result.replaceAll(a, b);
-
-  result = result.replace(/^\d{4}\s*/,"");
-  //result = result.replace(/^.*?年/,"");
-  return result.trim();
-};
-
-/* ---------- page ---------- */
+/* ===== Page ===== */
 export default function Home() {
   const api = process.env.NEXT_PUBLIC_API_URL;
-  const [name, setName] = useState("温心妤"); // 使用者更正用字
+
+  // 名稱請用「温心妤」
+  const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
 
-  // 當前查詢（選手＋選定泳姿距離）
+  // 目前條件的結果（此泳姿＋距離）
   const [items, setItems] = useState([]);
   const [next, setNext] = useState(null);
+
+  // 全部泳姿（不分距離）— 用來算「四式專項統計（不分距離）」
+  const [allItems, setAllItems] = useState([]);
+
   const [loading, setLoading] = useState(false);
 
-  // 全泳姿所有成績（專項統計用）
-  const [allItems, setAllItems] = useState([]);
-  const [loadingAll, setLoadingAll] = useState(false);
-
-  async function fetchOneStrokeAllPages(baseUrl) {
-    // 把這個泳姿的所有頁面抓齊
-    let cursor = 0;
-    const out = [];
-    for (;;) {
-      const url = `${baseUrl}&limit=200&cursor=${cursor}`;
-      const r = await fetch(url);
-      const j = await r.json();
-      out.push(...(j.items || []));
-      if (j.nextCursor == null) break;
-      cursor = j.nextCursor;
-    }
-    return out;
-  }
-
+  // 讀取目前條件
   async function search(cursor = 0) {
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true);
-    const url = `${api}/api/results?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=200&cursor=${cursor}`;
+
+    // 1) 目前條件（含距離）
+    const url = `${api}/api/results?name=${encodeURIComponent(
+      name
+    )}&stroke=${encodeURIComponent(stroke)}&limit=200&cursor=${cursor}`;
     const r = await fetch(url);
     const j = await r.json();
     const newItems = j.items || [];
     setItems(cursor === 0 ? newItems : [...items, ...newItems]);
     setNext(j.nextCursor ?? null);
+
+    // 2) 不分距離（四式用）：stroke 參數留空，取到足夠多資料做統計
+    //   這裡抓到 200 筆即可（如需更多再調）
+    const allUrl = `${api}/api/results?name=${encodeURIComponent(
+      name
+    )}&limit=200`;
+    const ar = await fetch(allUrl);
+    const aj = await ar.json();
+    setAllItems(aj.items || []);
+
     setLoading(false);
   }
 
-  // 專項統計：抓此選手「所有泳姿」（不分距離）
-  async function searchAllStyles() {
-    if (!api) return;
-    setLoadingAll(true);
-    // 有些後端允許不帶 stroke 直接 name= 查全部；為保險，這裡逐個泳姿抓並合併去重
-    const results = [];
-    for (const s of STROKES) {
-      const base = `${api}/api/results?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(s)}`;
-      // 分頁抓齊
-      const arr = await fetchOneStrokeAllPages(base);
-      results.push(...arr);
-    }
-    // 去重（同一筆若被不同泳姿誤撞，依 年份+賽事+項目 去重）
-    const seen = new Set();
-    const merged = [];
-    for (const it of results) {
-      const key = `${it["年份"]}|${it["賽事名稱"]}|${it["項目"]}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(it);
-    }
-    setAllItems(merged);
-    setLoadingAll(false);
-  }
+  /* ===== 成績與專項分析（當前條件） ===== */
+  const analysis = useMemo(() => {
+    if (!items.length) return null;
 
-  // 只要換了名字，就重新拉全泳姿；當前 items 由使用者按 [查詢] 觸發
-  useEffect(() => {
-    searchAllStyles();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name]);
-
-  /* ===== 成績與專項分析（當前條件：用 items） ===== */
-  const currentAnalysis = useMemo(() => {
-    if (!items.length) return { meetCount: 0, avg: 0, best: 0 };
-    const secs = items.map(x => x.seconds).filter(s => typeof s === "number" && s > 0);
-    const avg = secs.length ? secs.reduce((a,b)=>a+b,0)/secs.length : 0;
+    const secs = items
+      .map((x) => x.seconds)
+      .filter((s) => typeof s === "number" && s > 0);
+    const avg = secs.length ? secs.reduce((a, b) => a + b, 0) / secs.length : 0;
     const best = secs.length ? Math.min(...secs) : 0;
-    return { meetCount: items.length, avg, best };
+
+    // 「當前條件」下：只統計這個泳姿＋距離
+    //（卡片上我們只顯示出賽/平均/最佳）
+    return {
+      meetCount: items.length,
+      avg,
+      best,
+    };
   }, [items]);
 
-  /* ===== 四式專項統計（不分距離：用 allItems） ===== */
-  const styleStats = useMemo(() => {
-    const init = () => ({ count: 0, pb: null, mostDist: "", mostCount: 0 });
-    const byStyle = { 蛙式: init(), 仰式: init(), 自由式: init(), 蝶式: init() };
-    const countByStyleDist = { 蛙式: {}, 仰式: {}, 自由式: {}, 蝶式: {} };
+  /* ===== 四式專項統計（不分距離） for 選手 ===== */
+  const overallStyles = useMemo(() => {
+    if (!allItems.length) return null;
+
+    // 統計四式：出賽、PB、最多距離
+    const byStyle = {
+      蛙式: { count: 0, pb: null, distCount: {} },
+      仰式: { count: 0, pb: null, distCount: {} },
+      自由式: { count: 0, pb: null, distCount: {} },
+      蝶式: { count: 0, pb: null, distCount: {} },
+    };
 
     for (const it of allItems) {
-      const style = extractStyle(it["項目"]);
+      const { style, dist } = extractStyleAndDistance(it);
       if (!style) continue;
 
       byStyle[style].count += 1;
 
-      const dist = extractDistance(it["項目"]); // 只會是 50/100/200公尺
+      // 距離計數（例如 50公尺/100公尺/200公尺）
       if (dist) {
-        countByStyleDist[style][dist] = (countByStyleDist[style][dist] || 0) + 1;
+        byStyle[style].distCount[dist] = (byStyle[style].distCount[dist] || 0) + 1;
       }
 
+      // PB
       const sec = it.seconds;
-      if (sec > 0 && (byStyle[style].pb == null || sec < byStyle[style].pb)) {
-        byStyle[style].pb = sec;
+      if (typeof sec === "number" && sec > 0) {
+        if (byStyle[style].pb == null || sec < byStyle[style].pb) {
+          byStyle[style].pb = sec;
+        }
       }
     }
 
-    for (const s of Object.keys(byStyle)) {
-      const pool = countByStyleDist[s];
-      let maxDist = "", maxC = 0;
-      for (const d of Object.keys(pool)) {
-        if (pool[d] > maxC) { maxC = pool[d]; maxDist = d; }
+    // 算出每式「最多距離」
+    const result = {};
+    for (const k of Object.keys(byStyle)) {
+      const v = byStyle[k];
+      let mostDist = "",
+        mostCount = 0;
+      for (const d of Object.keys(v.distCount)) {
+        const c = v.distCount[d];
+        if (c > mostCount) {
+          mostCount = c;
+          mostDist = d;
+        }
       }
-      byStyle[s].mostDist = maxDist;
-      byStyle[s].mostCount = maxC;
+      result[k] = {
+        count: v.count,
+        pb: v.pb,
+        mostDist,
+        mostCount,
+      };
     }
-    return byStyle;
+
+    return result;
   }, [allItems]);
 
-  /* ===== 趨勢圖（用 items） ===== */
+  /* ===== 趨勢圖（依日期排序） ===== */
   const trend = useMemo(() => {
+    if (!items.length) return { data: [], pb: null };
     const data = items
-      .filter(x => x.seconds > 0 && x["年份"])
-      .map(x => ({ x: x["年份"], label: xLabel(x["年份"]), y: x.seconds, d: parseYYYYMMDD(x["年份"]) }))
-      .sort((a,b)=>a.d - b.d);
+      .filter((x) => x.seconds > 0 && x["年份"])
+      .map((x) => ({
+        x: x["年份"],
+        label: xLabel(x["年份"]),
+        y: x.seconds,
+        d: parseYYYYMMDD(x["年份"]),
+      }))
+      .sort((a, b) => a.d - b.d);
+
+    // PB
     let pb = null;
     for (const p of data) if (!pb || p.y < pb.y) pb = p;
     return { data, pb };
   }, [items]);
 
+  /* ===== 賽事名稱簡化 ===== */
+  const simplifyMeet = (s) => {
+    if (!s) return s;
+    let result = String(s);
+
+    // 去前綴數字
+    result = result.replace(/^\d{4}\s*/, "");
+    result = result.replace(/^\d{3}\s*/, "");
+    result = result.replace(/^.*?年/, "");
+
+    // 固定對照
+    const map = [
+      ["臺中市114年市長盃水上運動競賽(游泳項目)", "台中市長盃"],
+      ["全國冬季短水道游泳錦標賽", "全國冬短"],
+      ["全國總統盃暨美津濃游泳錦標賽", "全國總統盃"],
+      ["全國總統盃暨美津濃分齡游泳錦標賽", "全國總統盃"],
+      ["冬季短水道", "冬短"],
+      ["全國運動會臺南市游泳代表隊選拔賽", "台南全運會選拔"],
+      ["全國青少年游泳錦標賽", "全國青少"],
+      ["臺中市議長盃", "台中議長盃"],
+      ["臺中市市長盃", "台中市長盃"],
+      ["(游泳項目)", ""],
+      ["春季游泳錦標賽", "春長"],
+      ["年全國E世代青少年", "E世代"],
+      ["臺南市市長盃短水道", "台南市長盃"],
+      ["年臺南市中小學", "台南中小學"],
+      ["年臺南市委員盃", "台南委員盃"],
+      ["臺南市全國運動會游泳選拔賽", "台南全運會選拔"],
+      ["游泳錦標賽", ""],
+    ];
+    for (const [from, to] of map) {
+      result = result.replaceAll(from, to);
+    }
+
+    // 收尾空白
+    return result.trim().replace(/\s{2,}/g, " ");
+  };
+
   return (
-    <main style={{
-      minHeight: "100vh",
-      background:"radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)",
-      color:"#E9E9EC",
-      fontFamily:'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue"',
-      padding:"24px 16px 80px",
-    }}>
-      <div style={{ maxWidth:1080, margin:"0 auto" }}>
-        <h1 style={{fontSize:28,fontWeight:800,letterSpacing:2,color:"#E9DDBB",textShadow:"0 1px 0 #2a2e35",marginBottom:12}}>
+    <main
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)",
+        color: "#E9E9EC",
+        fontFamily:
+          'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue"',
+        padding: "24px 16px 80px",
+      }}
+    >
+      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+        <h1
+          style={{
+            fontSize: 28,
+            fontWeight: 800,
+            letterSpacing: 2,
+            color: "#E9DDBB",
+            textShadow: "0 1px 0 #2a2e35",
+            marginBottom: 12,
+          }}
+        >
           游泳成績查詢
         </h1>
 
         {/* 搜尋列 */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1.4fr auto",gap:8,marginBottom:12}}>
-          <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
-          <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
-            {STROKES.map(s => <option key={s} value={s}>{s}</option>)}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1.4fr auto",
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="姓名"
+            style={inp}
+          />
+          <select
+            value={stroke}
+            onChange={(e) => setStroke(e.target.value)}
+            style={inp}
+          >
+            <option value="50公尺自由式">50公尺自由式</option>
+            <option value="50公尺蛙式">50公尺蛙式</option>
+            <option value="50公尺仰式">50公尺仰式</option>
+            <option value="50公尺蝶式">50公尺蝶式</option>
+            <option value="100公尺自由式">100公尺自由式</option>
+            <option value="100公尺蛙式">100公尺蛙式</option>
+            <option value="100公尺仰式">100公尺仰式</option>
+            <option value="100公尺蝶式">100公尺蝶式</option>
+            <option value="200公尺自由式">200公尺自由式</option>
+            <option value="200公尺蛙式">200公尺蛙式</option>
+            <option value="200公尺仰式">200公尺仰式</option>
+            <option value="200公尺蝶式">200公尺蝶式</option>
+            <option value="200公尺混合式">200公尺混合式</option>
           </select>
-          <button onClick={()=>search(0)} disabled={loading} style={btn}>查詢</button>
+          <button onClick={() => search(0)} disabled={loading} style={btn}>
+            查詢
+          </button>
         </div>
 
         {/* 成績與專項分析（當前條件） */}
         <Card>
           <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
-          <div style={{ display:"flex", gap:32, marginTop:8 }}>
-            <KV label="出賽次數" value={`${currentAnalysis.meetCount} 場`} />
-            <KV label="平均成績" value={fmtTime(currentAnalysis.avg)} />
-            <KV label="最佳成績" value={fmtTime(currentAnalysis.best)} />
+          <div style={{ display: "flex", gap: 32, marginTop: 8 }}>
+            <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`} />
+            <KV label="平均成績" value={fmtTime(analysis?.avg ?? 0)} />
+            <KV label="最佳成績" value={fmtTime(analysis?.best ?? 0)} />
           </div>
         </Card>
 
         {/* 四式專項統計（不分距離） */}
         <Card>
-          <SectionTitle>四式專項統計（不分距離）{loadingAll ? "（載入中…）" : ""}</SectionTitle>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12}}>
-            {["蛙式","仰式","自由式","蝶式"].map(s=>{
-              const v = styleStats[s] || {};
+          <SectionTitle>四式專項統計（不分距離）</SectionTitle>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+            {["蛙式", "仰式", "自由式", "蝶式"].map((s) => {
+              const v = overallStyles?.[s] || {};
               return (
                 <MiniCard key={s}>
-                  <div style={{ fontWeight:700, marginBottom:6 }}>{s}</div>
-                  <KV label="出賽" value={`${v.count || 0} 場`} small />
-                  <KV label="最多距離" value={
-                    v.mostDist ? `${v.mostDist}${s}（${v.mostCount || 0}場）` : `-（0場）`
-                  } small />
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>{s}</div>
+                  <KV label="出賽" value={`${v.count ?? 0} 場`} small />
+                  <KV
+                    label="最多距離"
+                    value={
+                      v.mostDist
+                        ? `${v.mostDist}${v.mostCount ? `（${v.mostCount}場）` : ""}`
+                        : "-"
+                    }
+                    small
+                  />
                   <KV label="PB" value={fmtTime(v.pb)} small />
                 </MiniCard>
               );
@@ -249,33 +327,65 @@ export default function Home() {
         {/* 趨勢圖 */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
-          <div style={{ height:340, marginTop:8 }}>
+          <div style={{ height: 340, marginTop: 8 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend.data} margin={{ top:10, right:16, bottom:6, left:0 }}>
+              <LineChart data={trend.data} margin={{ top: 10, right: 16, bottom: 6, left: 0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3" />
-                <XAxis dataKey="label" tick={{fill:"#AEB4BF",fontSize:12}}
-                       axisLine={{stroke:"#3a3f48"}} tickLine={{stroke:"#3a3f48"}}/>
-                <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["dataMin - 1", "dataMax + 1"]}
-                       tick={{fill:"#AEB4BF",fontSize:12}} axisLine={{stroke:"#3a3f48"}}
-                       tickLine={{stroke:"#3a3f48"}} width={56}
-                       label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}/>
-                <Tooltip contentStyle={{background:"#15181e",border:"1px solid #2e333b",color:"#E9E9EC"}}
-                         formatter={(v)=>[fmtTime(v),"成績"]}
-                         labelFormatter={(l,p)=>`${p?.[0]?.payload?.x}`}/>
-                <Line type="monotone" dataKey="y" stroke="#80A7FF" strokeWidth={2}
-                      dot={{ r:3, stroke:"#0a0c10", strokeWidth:1 }} activeDot={{ r:5 }}/>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: "#AEB4BF", fontSize: 12 }}
+                  axisLine={{ stroke: "#3a3f48" }}
+                  tickLine={{ stroke: "#3a3f48" }}
+                />
+                <YAxis
+                  tickFormatter={(v) => v.toFixed(2)}
+                  domain={["dataMin - 1", "dataMax + 1"]}
+                  tick={{ fill: "#AEB4BF", fontSize: 12 }}
+                  axisLine={{ stroke: "#3a3f48" }}
+                  tickLine={{ stroke: "#3a3f48" }}
+                  width={56}
+                  label={{ value: "秒數", angle: -90, position: "insideLeft", fill: "#AEB4BF" }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#15181e",
+                    border: "1px solid #2e333b",
+                    color: "#E9E9EC",
+                  }}
+                  formatter={(v) => [fmtTime(v), "成績"]}
+                  labelFormatter={(l, p) => `${p?.[0]?.payload?.x}`}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="y"
+                  stroke="#80A7FF"
+                  strokeWidth={2}
+                  dot={{ r: 3, stroke: "#0a0c10", strokeWidth: 1 }}
+                  activeDot={{ r: 5 }}
+                />
                 {trend.pb && (
-                  <ReferenceDot x={trend.pb.label} y={trend.pb.y} r={5} fill="#FF6B6B"
-                                stroke="#0a0c10" strokeWidth={1} isFront
-                                label={{ value:`PB ${fmtTime(trend.pb.y)}`, position:"right",
-                                fill:"#FFC7C7", fontSize:12 }}/>
+                  <ReferenceDot
+                    x={trend.pb.label}
+                    y={trend.pb.y}
+                    r={5}
+                    fill="#FF6B6B"
+                    stroke="#0a0c10"
+                    strokeWidth={1}
+                    isFront
+                    label={{
+                      value: `PB ${fmtTime(trend.pb.y)}`,
+                      position: "right",
+                      fill: "#FFC7C7",
+                      fontSize: 12,
+                    }}
+                  />
                 )}
               </LineChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        {/* 明細（最新在上） */}
+        {/* 明細（最新在最上） */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -289,8 +399,8 @@ export default function Home() {
             <tbody>
               {items
                 .slice()
-                .sort((a,b)=> b["年份"] - a["年份"]) // 新→舊
-                .map((r,i)=>(
+                .sort((a, b) => b["年份"] - a["年份"]) // 最新在上
+                .map((r, i) => (
                   <tr key={i}>
                     <td style={td}>{r["年份"]}</td>
                     <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
@@ -299,8 +409,9 @@ export default function Home() {
                 ))}
             </tbody>
           </table>
+
           {next != null && (
-            <button onClick={()=>search(next)} disabled={loading} style={{...btn, marginTop:12}}>
+            <button onClick={() => search(next)} disabled={loading} style={{ ...btn, marginTop: 12 }}>
               載入更多
             </button>
           )}
@@ -310,7 +421,7 @@ export default function Home() {
   );
 }
 
-/* ---------- UI pieces ---------- */
+/* ======= UI pieces ======= */
 const metal = {
   card:
     "linear-gradient(180deg, rgba(31,35,43,.9), rgba(19,22,27,.98)) padding-box, linear-gradient(180deg, #2b2f36, #14171c) border-box",
@@ -320,62 +431,108 @@ const metal = {
 };
 
 const Card = ({ children }) => (
-  <section style={{
-    background: metal.card, border: metal.border, borderRadius: metal.radius,
-    boxShadow: metal.shadow, padding: 16, margin: "12px 0",
-  }}>{children}</section>
+  <section
+    style={{
+      background: metal.card,
+      border: metal.border,
+      borderRadius: metal.radius,
+      boxShadow: metal.shadow,
+      padding: 16,
+      margin: "12px 0",
+    }}
+  >
+    {children}
+  </section>
 );
 
 const MiniCard = ({ children }) => (
-  <div style={{
-    background:"linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26,.95)) padding-box, linear-gradient(180deg, #313641, #161a20) border-box",
-    border:"1px solid transparent", borderRadius:12,
-    boxShadow:"inset 0 1px 0 rgba(255,255,255,.03)", padding:12,
-  }}>{children}</div>
+  <div
+    style={{
+      background:
+        "linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26,.95)) padding-box, linear-gradient(180deg, #313641, #161a20) border-box",
+      border: "1px solid transparent",
+      borderRadius: 12,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)",
+      padding: 12,
+    }}
+  >
+    {children}
+  </div>
 );
 
 const SectionTitle = ({ children }) => (
-  <div style={{ fontWeight:700, letterSpacing:0.5, color:"#D8D6CB", marginBottom:6 }}>{children}</div>
+  <div
+    style={{
+      fontWeight: 700,
+      letterSpacing: 0.5,
+      color: "#D8D6CB",
+      marginBottom: 6,
+    }}
+  >
+    {children}
+  </div>
 );
 
 const KV = ({ label, value, small }) => (
-  <div style={{ marginRight:24 }}>
-    <div style={{ fontSize:small?12:13, color:"#AEB4BF" }}>{label}</div>
-    <div style={{ fontSize:small?16:20, fontWeight:700, color:"#EDEBE3", textShadow:"0 1px 0 rgba(0,0,0,.6)" }}>
+  <div style={{ marginRight: 24 }}>
+    <div style={{ fontSize: small ? 12 : 13, color: "#AEB4BF" }}>{label}</div>
+    <div
+      style={{
+        fontSize: small ? 16 : 20,
+        fontWeight: 700,
+        color: "#EDEBE3",
+        textShadow: "0 1px 0 rgba(0,0,0,.6)",
+      }}
+    >
       {value ?? "-"}
     </div>
   </div>
 );
 
 const inp = {
-  background:"linear-gradient(180deg, #191c22, #12151a)",
-  border:"1px solid #2b2f36",
-  color:"#E9E9EC",
-  padding:"10px 12px",
-  borderRadius:10,
-  outline:"none",
+  background: "linear-gradient(180deg, #191c22, #12151a)",
+  border: "1px solid #2b2f36",
+  color: "#E9E9EC",
+  padding: "10px 12px",
+  borderRadius: 10,
+  outline: "none",
 };
 
 const btn = {
   background:
     "linear-gradient(180deg, #2a60ff, #234ad3) padding-box, linear-gradient(180deg, #5b7cff, #1a2a6e) border-box",
-  border:"1px solid transparent", color:"white", fontWeight:700,
-  padding:"10px 16px", borderRadius:10, boxShadow:"0 6px 14px rgba(50,90,255,.35)",
-  cursor:"pointer",
+  border: "1px solid transparent",
+  color: "white",
+  fontWeight: 700,
+  padding: "10px 16px",
+  borderRadius: 10,
+  boxShadow: "0 6px 14px rgba(50,90,255,.35)",
+  cursor: "pointer",
 };
 
 const table = {
-  width:"100%", marginTop:8, borderCollapse:"separate", borderSpacing:0,
+  width: "100%",
+  marginTop: 8,
+  borderCollapse: "separate",
+  borderSpacing: 0,
   background:
     "linear-gradient(180deg, rgba(26,29,35,.85), rgba(14,16,20,.95)) padding-box, linear-gradient(180deg, #2b2f36, #171a1f) border-box",
-  border:"1px solid transparent", borderRadius:12, overflow:"hidden",
+  border: "1px solid transparent",
+  borderRadius: 12,
+  overflow: "hidden",
 };
 
 const th = {
-  textAlign:"left", fontWeight:700, color:"#C8CDD7", padding:"10px 12px",
-  borderBottom:"1px solid #2c3037", background:"rgba(255,255,255,.02)",
+  textAlign: "left",
+  fontWeight: 700,
+  color: "#C8CDD7",
+  padding: "10px 12px",
+  borderBottom: "1px solid #2c3037",
+  background: "rgba(255,255,255,.02)",
 };
 
 const td = {
-  color:"#E9E9EC", padding:"10px 12px", borderBottom:"1px solid #232830",
+  color: "#E9E9EC",
+  padding: "10px 12px",
+  borderBottom: "1px solid #232830",
 };
