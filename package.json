@@ -7,8 +7,10 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
+    "dayjs": "^1.11.18",
     "next": "^14.2.32",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "recharts": "^3.2.0"
   }
 }
