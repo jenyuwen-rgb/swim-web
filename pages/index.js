@@ -1,13 +1,8 @@
-// pages/index.js
 import { useMemo, useState } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Dot } from "recharts";
 
-/* ===== utils ===== */
 const fmtTime = (s) => {
-  if (s == null) return "-";
+  if (!s && s !== 0) return "-";
   const sec = Number(s);
   if (Number.isNaN(sec)) return "-";
   const m = Math.floor(sec / 60);
@@ -16,35 +11,49 @@ const fmtTime = (s) => {
 };
 const parseYYYYMMDD = (v) => {
   const s = String(v || "");
-  return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  const y = +s.slice(0, 4), m = +s.slice(4, 6) - 1, d = +s.slice(6, 8);
+  return new Date(y, m, d);
 };
 const xLabel = (v) => {
   const s = String(v || "");
   return `${s.slice(2, 4)}/${s.slice(4, 6)}`;
 };
 
-/* ===== page ===== */
 export default function Home() {
   const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-  const [name, setName]   = useState("温心妤");
+  const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
 
-  const [summary, setSummary] = useState(null); // 後端彙整
-  const [items, setItems]     = useState([]);   // 明細
+  const [items, setItems] = useState([]);
+  const [next, setNext] = useState(null);
+  const [famStats, setFamStats] = useState(null);
+  const [pbSeconds, setPbSeconds] = useState(null); // 後端給的 PB
   const [loading, setLoading] = useState(false);
-  const [err, setErr]         = useState("");
+  const [err, setErr] = useState("");
 
-  async function search() {
+  async function search(cursor = 0) {
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
-    setLoading(true); setErr("");
+    setLoading(true);
+    setErr("");
+
     try {
-      const url = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
+      // 1) 目前條件（含距離）— 後端已附 pb_seconds, is_pb
+      const url = `${api}/api/results?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=200&cursor=${cursor}`;
       const r = await fetch(url);
-      if (!r.ok) throw new Error("summary 取得失敗");
+      if (!r.ok) throw new Error("results 取得失敗");
       const j = await r.json();
-      setSummary(j || {});
-      setItems(j.items || []);
+      const newItems = j.items || [];
+      setItems(cursor === 0 ? newItems : [...items, ...newItems]);
+      setNext(j.nextCursor ?? null);
+      setPbSeconds(j.pb_seconds ?? null);
+
+      // 2) 四式專項統計（不分距離）
+      const sUrl = `${api}/api/stats/family?name=${encodeURIComponent(name)}`;
+      const sr = await fetch(sUrl);
+      if (!sr.ok) throw new Error("stats/family 取得失敗");
+      const sj = await sr.json();
+      setFamStats(sj || {});
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -52,40 +61,59 @@ export default function Home() {
     }
   }
 
-  // 成績與專項分析
-  const analysis = summary?.analysis
-    ? {
-        meetCount: summary.analysis.meetCount ?? 0,
-        avg: summary.analysis.avg_seconds ?? 0,
-        best: summary.analysis.pb_seconds ?? 0,
-      }
-    : { meetCount: 0, avg: 0, best: 0 };
+  const analysis = useMemo(() => {
+    if (!items.length) return { meetCount: 0, avg: 0, best: 0 };
+    const secs = items.map((x) => x.seconds).filter((s) => typeof s === "number" && s > 0);
+    const avg = secs.length ? secs.reduce((a, b) => a + b, 0) / secs.length : 0;
+    const best = typeof pbSeconds === "number" ? pbSeconds : (secs.length ? Math.min(...secs) : 0);
+    return { meetCount: items.length, avg, best };
+  }, [items, pbSeconds]);
 
-  // 四式專項統計
-  const fam = summary?.family || {};
-
-  // 趨勢
+  // 趨勢圖資料（後端有 is_pb，這裡只轉成畫圖用）
   const trend = useMemo(() => {
-    const pts = summary?.trend?.points || [];
-    const data = pts
-      .filter(p => p.seconds > 0 && p.year)
-      .map(p => ({ x: p.year, label: xLabel(p.year), y: p.seconds, d: parseYYYYMMDD(p.year) }))
+    if (!items.length) return { data: [], pb: null };
+    const data = items
+      .filter((x) => x.seconds > 0 && x["年份"])
+      .map((x) => ({
+        x: x["年份"],
+        label: xLabel(x["年份"]),
+        y: x.seconds,
+        d: parseYYYYMMDD(x["年份"]),
+        is_pb: !!x.is_pb,
+      }))
       .sort((a, b) => a.d - b.d);
-    let pb = null; for (const p of data) if (!pb || p.y < pb.y) pb = p;
-    return { data, pb };
-  }, [summary]);
 
-  // 後端已清洗賽事名稱，這裡直接顯示
-  const showMeet = (s) => (s || "").trim();
+    // PB 點（若後端標了 is_pb，就直接找 is_pb）
+    let pb = data.find((p) => p.is_pb) || null;
+    // 保險：若沒有 is_pb（例如全部成績無法解析），以秒數最小者
+    if (!pb && data.length) {
+      pb = data.reduce((min, cur) => (min && min.y < cur.y ? min : cur), null);
+    }
+    return { data, pb };
+  }, [items]);
+
+  // 自訂 dot：PB 點畫紅色
+  const RenderDot = (props) => {
+    const { cx, cy, payload } = props;
+    const isPB = payload?.is_pb;
+    // 用 Recharts 的 Dot 元件，PB 給紅色
+    return (
+      <Dot
+        cx={cx}
+        cy={cy}
+        r={isPB ? 5 : 3}
+        stroke="#0a0c10"
+        strokeWidth={1}
+        fill={isPB ? "#FF4D4D" : "#80A7FF"}
+      />
+    );
+  };
 
   return (
     <main style={{ minHeight: "100vh", background: "radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)", color: "#E9E9EC", padding: "24px 16px 80px" }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2, color: "#E9DDBB", textShadow: "0 1px 0 #2a2e35", marginBottom: 12 }}>
-          游泳成績查詢
-        </h1>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2, color: "#E9DDBB", textShadow: "0 1px 0 #2a2e35", marginBottom: 12 }}>游泳成績查詢</h1>
 
-        {/* 搜尋列 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr auto", gap: 8, marginBottom: 12 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="姓名" style={inp} />
           <select value={stroke} onChange={(e) => setStroke(e.target.value)} style={inp}>
@@ -93,32 +121,30 @@ export default function Home() {
               <option key={x} value={x}>{x}</option>
             ))}
           </select>
-          <button onClick={search} disabled={loading} style={btn}>查詢</button>
+          <button onClick={() => search(0)} disabled={loading} style={btn}>查詢</button>
         </div>
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
-        {/* 成績與專項分析 */}
         <Card>
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display: "flex", gap: 32, marginTop: 8 }}>
             <KV label="出賽次數" value={`${analysis.meetCount} 場`} />
-            <KV label="平均成績"  value={fmtTime(analysis.avg)} />
-            <KV label="最佳成績"  value={fmtTime(analysis.best)} />
+            <KV label="平均成績" value={fmtTime(analysis.avg)} />
+            <KV label="最佳成績" value={fmtTime(analysis.best)} />
           </div>
         </Card>
 
-        {/* 四式專項統計 */}
         <Card>
           <SectionTitle>四式專項統計</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-            {["蛙式","仰式","自由式","蝶式"].map((s) => {
-              const v = fam[s] || {};
+            {["蛙式","仰式","自由式","蝶式"].map((s)=> {
+              const v = famStats?.[s] || {};
               return (
                 <MiniCard key={s}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>{s}</div>
                   <KV label="出賽" value={`${v.count ?? 0} 場`} small />
-                  <KV label="最多項次" value={v.mostDist ? `${v.mostDist}${v.mostCount ? `（${v.mostCount}場）` : ""}` : "-"} small />
+                  <KV label="最多項次" value={v.mostDist ? `${v.mostDist}${v.mostCount?`（${v.mostCount}場）`:""}` : "-"} small />
                   <KV label="PB" value={fmtTime(v.pb_seconds)} small />
                 </MiniCard>
               );
@@ -126,33 +152,43 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* 趨勢圖 */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
           <div style={{ height: 340, marginTop: 8 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend.data} margin={{ top: 10, right: 16, bottom: 6, left: 0 }}>
+              <LineChart
+                data={trend.data}
+                margin={{ top: 10, right: 16, bottom: 6, left: 0 }}
+              >
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: "#AEB4BF", fontSize: 12 }} axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }} />
-                <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["dataMin - 1", "dataMax + 1"]}
-                       tick={{ fill: "#AEB4BF", fontSize: 12 }} axisLine={{ stroke: "#3a3f48" }}
-                       tickLine={{ stroke: "#3a3f48" }} width={56}
-                       label={{ value: "秒數", angle: -90, position: "insideLeft", fill: "#AEB4BF" }} />
-                <Tooltip contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
-                         formatter={(v)=>[fmtTime(v), "成績"]}
-                         labelFormatter={(l,p)=>`${p?.[0]?.payload?.x}`} />
-                <Line type="monotone" dataKey="y" stroke="#80A7FF" strokeWidth={2}
-                      dot={{ r: 3, stroke: "#0a0c10", strokeWidth: 1 }} activeDot={{ r: 5 }} />
+                <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["dataMin - 1", "dataMax + 1"]} tick={{ fill: "#AEB4BF", fontSize: 12 }} axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }} width={56} label={{ value: "秒數", angle: -90, position: "insideLeft", fill: "#AEB4BF" }} />
+                <Tooltip contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }} formatter={(v)=>[fmtTime(v),"成績"]} labelFormatter={(l,p)=>`${p?.[0]?.payload?.x}`} />
+                <Line
+                  type="monotone"
+                  dataKey="y"
+                  stroke="#80A7FF"
+                  strokeWidth={2}
+                  dot={<RenderDot />}
+                  activeDot={{ r: 5 }}
+                />
                 {trend.pb && (
-                  <ReferenceDot x={trend.pb.label} y={trend.pb.y} r={5} fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1} isFront
-                    label={{ value:`PB ${fmtTime(trend.pb.y)}`, position:"right", fill:"#FFC7C7", fontSize:12 }} />
+                  <ReferenceDot
+                    x={trend.pb.label}
+                    y={trend.pb.y}
+                    r={6}
+                    fill="#FF4D4D"
+                    stroke="#0a0c10"
+                    strokeWidth={1}
+                    isFront
+                    label={{ value: `PB ${fmtTime(trend.pb.y)}`, position: "right", fill: "#FFC7C7", fontSize: 12 }}
+                  />
                 )}
               </LineChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        {/* 明細 */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -160,35 +196,42 @@ export default function Home() {
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
             </thead>
             <tbody>
-              {(items || []).slice().sort((a,b)=>b["年份"]-a["年份"]).map((r,i)=>(
+              {items
+                .slice()
+                .sort((a,b)=>b["年份"]-a["年份"])
+                .map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
-                  <td style={td}>{r["賽事名稱_raw"] || r["賽事名稱"]}</td>
-                  <td style={td}>{fmtTime(r.seconds)}</td>
+                  <td style={td}>{r["賽事名稱"]}</td>{/* ← 目前顯示原始或清洗後皆可，依後端欄位 */}
+                  <td style={{ ...td, color: r.is_pb ? "#FF4D4D" : td.color, fontWeight: r.is_pb ? 800 : 400 }}>
+                    {fmtTime(r.seconds)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {next != null && (
+            <button onClick={() => search(next)} disabled={loading} style={{ ...btn, marginTop: 12 }}>
+              載入更多
+            </button>
+          )}
         </Card>
       </div>
     </main>
   );
 }
 
-/* ===== UI bits ===== */
 const Card = ({ children }) => (
   <section style={{
     background: "linear-gradient(180deg, rgba(31,35,43,.9), rgba(19,22,27,.98)) padding-box, linear-gradient(180deg, #2b2f36, #14171c) border-box",
-    border: "1px solid transparent", borderRadius: 14,
-    boxShadow: "0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02)",
+    border: "1px solid transparent", borderRadius: 14, boxShadow: "0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02)",
     padding: 16, margin: "12px 0",
   }}>{children}</section>
 );
 const MiniCard = ({ children }) => (
   <div style={{
     background:"linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26,.95)) padding-box, linear-gradient(180deg, #313641, #161a20) border-box",
-    border:"1px solid transparent", borderRadius:12,
-    boxShadow:"inset 0 1px 0 rgba(255,255,255,.03)", padding:12,
+    border:"1px solid transparent", borderRadius:12, boxShadow:"inset 0 1px 0 rgba(255,255,255,.03)", padding:12,
   }}>{children}</div>
 );
 const SectionTitle = ({ children }) => (
