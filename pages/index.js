@@ -1,5 +1,8 @@
+// pages/index.js
 import { useMemo, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Dot } from "recharts";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Dot,
+} from "recharts";
 
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
@@ -28,7 +31,8 @@ export default function Home() {
   const [items, setItems] = useState([]);
   const [next, setNext] = useState(null);
   const [famStats, setFamStats] = useState(null);
-  const [pbSeconds, setPbSeconds] = useState(null); // 後端給的 PB
+  const [pbSeconds, setPbSeconds] = useState(null);
+  const [rankData, setRankData] = useState(null); // ← 新增：排行 API 回傳
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -38,7 +42,7 @@ export default function Home() {
     setErr("");
 
     try {
-      // 1) 目前條件（含距離）— 後端已附 pb_seconds, is_pb
+      // 1) 成績（當前條件）
       const url = `${api}/api/results?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=200&cursor=${cursor}`;
       const r = await fetch(url);
       if (!r.ok) throw new Error("results 取得失敗");
@@ -54,6 +58,13 @@ export default function Home() {
       if (!sr.ok) throw new Error("stats/family 取得失敗");
       const sj = await sr.json();
       setFamStats(sj || {});
+
+      // 3) 排行（同距離＋同泳式，或你後端定義的準則）
+      const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
+      const rr = await fetch(rkUrl);
+      if (!rr.ok) throw new Error("rank 取得失敗");
+      const rj = await rr.json();
+      setRankData(rj || null);
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -69,7 +80,6 @@ export default function Home() {
     return { meetCount: items.length, avg, best };
   }, [items, pbSeconds]);
 
-  // 趨勢圖資料（後端有 is_pb，這裡只轉成畫圖用）
   const trend = useMemo(() => {
     if (!items.length) return { data: [], pb: null };
     const data = items
@@ -83,20 +93,16 @@ export default function Home() {
       }))
       .sort((a, b) => a.d - b.d);
 
-    // PB 點（若後端標了 is_pb，就直接找 is_pb）
     let pb = data.find((p) => p.is_pb) || null;
-    // 保險：若沒有 is_pb（例如全部成績無法解析），以秒數最小者
     if (!pb && data.length) {
       pb = data.reduce((min, cur) => (min && min.y < cur.y ? min : cur), null);
     }
     return { data, pb };
   }, [items]);
 
-  // 自訂 dot：PB 點畫紅色
   const RenderDot = (props) => {
     const { cx, cy, payload } = props;
     const isPB = payload?.is_pb;
-    // 用 Recharts 的 Dot 元件，PB 給紅色
     return (
       <Dot
         cx={cx}
@@ -108,6 +114,22 @@ export default function Home() {
       />
     );
   };
+
+  // 排行卡片用：取前10名，若本人不在前10，再額外補上一行本人
+  const rankRows = useMemo(() => {
+    if (!rankData || !Array.isArray(rankData.board)) return [];
+    const top10 = rankData.board.slice(0, 10);
+    const meInTop10 = top10.some((x) => x.name === name);
+    if (meInTop10) return top10;
+    // 若本人不在前10，且 rankData 有提供「本人」資訊，就在最後補一行
+    // 後端可在 board 中用 is_me 標記；如無，則用 rankData.rank/name 比對
+    const me =
+      rankData.board.find((x) => x.is_me) ||
+      { rank: rankData.rank, name, pb_seconds: rankData.pb_seconds, pb_year: rankData.pb_year, pb_meet: rankData.pb_meet };
+    // 避免重複（若本來也在 board 但排在 10 名外）
+    const deduped = top10.filter((x) => x.name !== me.name);
+    return [...deduped, { ...me, _extra: true }];
+  }, [rankData, name]);
 
   return (
     <main style={{ minHeight: "100vh", background: "radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)", color: "#E9E9EC", padding: "24px 16px 80px" }}>
@@ -126,6 +148,7 @@ export default function Home() {
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
+        {/* 成績分析 */}
         <Card>
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display: "flex", gap: 32, marginTop: 8 }}>
@@ -135,6 +158,7 @@ export default function Home() {
           </div>
         </Card>
 
+        {/* 四式專項統計 */}
         <Card>
           <SectionTitle>四式專項統計</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
@@ -152,6 +176,53 @@ export default function Home() {
           </div>
         </Card>
 
+        {/* 排行卡片 */}
+        <Card>
+          <SectionTitle>排行</SectionTitle>
+          <div style={{ fontSize: 13, color: "#AEB4BF", marginBottom: 6 }}>
+            {rankData ? (
+              <>
+                <span>分母：{rankData.total ?? "-"}</span>
+                <span style={{ marginLeft: 12 }}>
+                  你的名次：<b style={{ color:"#FFD36B" }}>{rankData.rank ?? "-"}</b>
+                </span>
+                {typeof rankData.percentile === "number" && (
+                  <span style={{ marginLeft: 12 }}>
+                    百分位：{(rankData.percentile * 100).toFixed(1)}%
+                  </span>
+                )}
+              </>
+            ) : "尚未查詢"}
+          </div>
+
+          <table style={table}>
+            <thead>
+              <tr>
+                <th style={th}>名次</th>
+                <th style={th}>選手</th>
+                <th style={th}>PB</th>
+                <th style={th}>年份</th>
+                <th style={th}>賽事</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rankRows.map((r, i) => {
+                const isMe = r.is_me || r.name === name || r._extra;
+                return (
+                  <tr key={i}>
+                    <td style={{ ...td, fontWeight: isMe ? 800 : 400, color: isMe ? "#FF6B6B" : td.color }}>{r.rank ?? "-"}</td>
+                    <td style={{ ...td, fontWeight: isMe ? 800 : 400, color: isMe ? "#FF6B6B" : td.color }}>{r.name ?? "-"}</td>
+                    <td style={{ ...td, fontWeight: isMe ? 800 : 400, color: isMe ? "#FF6B6B" : td.color }}>{fmtTime(r.pb_seconds)}</td>
+                    <td style={{ ...td, fontWeight: isMe ? 800 : 400, color: isMe ? "#FF6B6B" : td.color }}>{r.pb_year ?? "-"}</td>
+                    <td style={{ ...td, fontWeight: isMe ? 800 : 400, color: isMe ? "#FF6B6B" : td.color }}>{r.pb_meet ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+
+        {/* 成績趨勢 */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
           <div style={{ height: 340, marginTop: 8 }}>
@@ -189,6 +260,7 @@ export default function Home() {
           </div>
         </Card>
 
+        {/* 詳細成績 */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -202,7 +274,7 @@ export default function Home() {
                 .map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
-                  <td style={td}>{r["賽事名稱"]}</td>{/* ← 目前顯示原始或清洗後皆可，依後端欄位 */}
+                  <td style={td}>{r["賽事名稱"]}</td>
                   <td style={{ ...td, color: r.is_pb ? "#FF4D4D" : td.color, fontWeight: r.is_pb ? 800 : 400 }}>
                     {fmtTime(r.seconds)}
                   </td>
