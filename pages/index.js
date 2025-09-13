@@ -118,7 +118,7 @@ export default function Home() {
                 <MiniCard key={s}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>{s}</div>
                   <KV label="出賽" value={`${v.count ?? 0} 場`} small />
-                  <KV label="最多距離" value={v.mostDist ? `${v.mostDist}${v.mostCount ? `（${v.mostCount}場）` : ""}` : "-"} small />
+                  <KV label="最多項次" value={v.mostDist ? `${v.mostDist}${v.mostCount ? `（${v.mostCount}場）` : ""}` : "-"} small />
                   <KV label="PB" value={fmtTime(v.pb_seconds)} small />
                 </MiniCard>
               );
