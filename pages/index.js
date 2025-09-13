@@ -100,7 +100,7 @@ export default function Home() {
 
         {/* 成績與專項分析 */}
         <Card>
-          <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
+          <SectionTitle>成績分析</SectionTitle>
           <div style={{ display: "flex", gap: 32, marginTop: 8 }}>
             <KV label="出賽次數" value={`${analysis.meetCount} 場`} />
             <KV label="平均成績"  value={fmtTime(analysis.avg)} />
@@ -110,7 +110,7 @@ export default function Home() {
 
         {/* 四式專項統計 */}
         <Card>
-          <SectionTitle>四式專項統計（不分距離）</SectionTitle>
+          <SectionTitle>四式專項統計</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
             {["蛙式","仰式","自由式","蝶式"].map((s) => {
               const v = fam[s] || {};
@@ -163,7 +163,7 @@ export default function Home() {
               {(items || []).slice().sort((a,b)=>b["年份"]-a["年份"]).map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
-                  <td style={td}>{showMeet(r["賽事名稱"])}</td>
+                  <td style={td}>{r["賽事名稱_raw"] || r["賽事名稱"]}</td>
                   <td style={td}>{fmtTime(r.seconds)}</td>
                 </tr>
               ))}
