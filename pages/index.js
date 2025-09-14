@@ -23,6 +23,14 @@ const xLabel = (v) => {
   return `${s.slice(2, 4)}/${s.slice(4, 6)}`;
 };
 
+// 自訂三角形點
+function TriangleDot({ cx, cy, r = 5, fill = "#3DDC84", stroke = "#0a0c10" }) {
+  if (cx == null || cy == null) return null;
+  const h = r * 1.6;
+  const path = `M ${cx} ${cy - h/2} L ${cx - r} ${cy + h/2} L ${cx + r} ${cy + h/2} Z`;
+  return <path d={path} fill={fill} stroke={stroke} strokeWidth={1} />;
+}
+
 export default function Home() {
   const api = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -39,14 +47,12 @@ export default function Home() {
     setLoading(true);
     setErr("");
     try {
-      // 後端彙總（分析 + 趨勢 + 明細 + 四式統計）
       const url = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
       const r = await fetch(url);
       if (!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
       setSummary(j);
 
-      // 排行（含榜首、鄰近名單、分母等）
       const r2 = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if (!r2.ok) throw new Error("rank 取得失敗");
       const j2 = await r2.json();
@@ -58,31 +64,48 @@ export default function Home() {
     }
   }
 
-  // 使用者趨勢
-  const trendData = useMemo(() => {
+  // 來源資料各自先整理並按日期排序
+  const userTrend = useMemo(() => {
     if (!summary?.trend?.points) return [];
     return summary.trend.points
       .map((x) => ({ x: x.year, label: xLabel(x.year), y: x.seconds, d: parseYYYYMMDD(x.year) }))
       .sort((a, b) => a.d - b.d);
   }, [summary]);
 
-  // 榜首趨勢（完整歷年同泳姿＋距離）
-  const leaderTrend = useMemo(() => {
+  const leaderTrendRaw = useMemo(() => {
     if (!rank?.leaderTrend) return [];
     return rank.leaderTrend
       .map((x) => ({ x: x.year, label: xLabel(x.year), y: x.seconds, d: parseYYYYMMDD(x.year) }))
       .sort((a, b) => a.d - b.d);
   }, [rank]);
 
-  // 找 PB 點（畫紅點）
+  // 統一 X 軸：合併兩條資料的日期，排序，生成共用序列
+  const mergedTrend = useMemo(() => {
+    const mapUser = new Map(userTrend.map(p => [p.x, p]));
+    const mapLeader = new Map(leaderTrendRaw.map(p => [p.x, p]));
+    const allKeys = Array.from(new Set([...mapUser.keys(), ...mapLeader.keys()]));
+    allKeys.sort((a, b) => parseYYYYMMDD(a) - parseYYYYMMDD(b));
+    return allKeys.map(k => {
+      const u = mapUser.get(k);
+      const l = mapLeader.get(k);
+      return {
+        x: k,
+        label: xLabel(k),
+        user: u ? u.y : null,
+        leader: l ? l.y : null,
+      };
+    });
+  }, [userTrend, leaderTrendRaw]);
+
+  // PB（給紅點）
   const pb = useMemo(() => {
     if (!summary?.analysis?.pb_seconds) return null;
     let best = null;
-    for (const p of trendData) {
+    for (const p of userTrend) {
       if (typeof p.y === "number" && p.y > 0 && (!best || p.y < best.y)) best = p;
     }
-    return best;
-  }, [trendData, summary]);
+    return best; // {x,label,y}
+  }, [userTrend, summary]);
 
   return (
     <main style={{ minHeight: "100vh", background: "radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)", color: "#E9E9EC", padding: "24px 16px 80px" }}>
@@ -103,7 +126,6 @@ export default function Home() {
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
-        {/* 成績與專項分析 */}
         {summary && (
           <Card>
             <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
@@ -115,7 +137,6 @@ export default function Home() {
           </Card>
         )}
 
-        {/* 四式專項統計 */}
         {summary && (
           <Card>
             <SectionTitle>四式專項統計（不分距離）</SectionTitle>
@@ -135,7 +156,6 @@ export default function Home() {
           </Card>
         )}
 
-        {/* 排行卡片 */}
         {rank && (
           <Card>
             <SectionTitle>排行</SectionTitle>
@@ -174,13 +194,12 @@ export default function Home() {
           </Card>
         )}
 
-        {/* 成績趨勢（藍：使用者圓點；綠：榜首三角形） */}
         {summary && (
           <Card>
             <SectionTitle>成績趨勢（與榜首對照）</SectionTitle>
             <div style={{ height: 360, marginTop: 8 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart margin={{ top: 10, right: 16, bottom: 6, left: 0 }}>
+                <LineChart data={mergedTrend} margin={{ top: 10, right: 16, bottom: 6, left: 0 }}>
                   <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3" />
                   <XAxis
                     dataKey="label"
@@ -193,13 +212,13 @@ export default function Home() {
                   <Tooltip
                     contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
                     formatter={(v, n)=>[fmtTime(v), n]}
-                    labelFormatter={(l,p)=>p?.[0]?.payload?.x}
+                    labelFormatter={(_, p)=>p?.[0]?.payload?.x}
                   />
                   <Legend />
-                  {/* 使用者：白圓點＋藍線，點與點必連線 */}
+                  {/* 使用者：白圓點＋藍線（點與點必連線） */}
                   <Line
-                    data={trendData}
-                    dataKey="y"
+                    type="monotone"
+                    dataKey="user"
                     name={name}
                     stroke="#80A7FF"
                     strokeWidth={2}
@@ -207,24 +226,20 @@ export default function Home() {
                     activeDot={{ r: 5 }}
                     connectNulls
                   />
-                  {/* 榜首：綠三角點＋綠線，點與點必連線 */}
+                  {/* 榜首：綠三角點＋綠線（點與點必連線） */}
                   <Line
-                    data={leaderTrend}
-                    dataKey="y"
+                    type="monotone"
+                    dataKey="leader"
                     name="榜首"
                     stroke="#3DDC84"
                     strokeWidth={2}
-                    dot={{ r: 5, stroke:"#0a0c10", strokeWidth:1 }}
-                    activeDot={{ r: 6 }}
+                    dot={<TriangleDot />}
+                    activeDot={<TriangleDot r={6} />}
                     connectNulls
                   />
-                  {/* 自訂三角形點（用 ReferenceDot 疊加） */}
-                  {leaderTrend.map((p,i)=>(
-                    <ReferenceDot key={i} x={p.label} y={p.y} r={5} fill="#3DDC84" stroke="#0a0c10" />
-                  ))}
-                  {/* PB 紅點標記 */}
+                  {/* PB 紅點 */}
                   {pb && (
-                    <ReferenceDot x={pb.label} y={pb.y} r={6} fill="#FF6B6B"
+                    <ReferenceDot x={xLabel(pb.x)} y={pb.y} r={6} fill="#FF6B6B"
                       stroke="#0a0c10" label={{ value:`PB ${fmtTime(pb.y)}`, position:"right", fill:"#FF6B6B", fontSize:12 }} />
                   )}
                 </LineChart>
@@ -233,7 +248,6 @@ export default function Home() {
           </Card>
         )}
 
-        {/* 詳細成績 */}
         {summary && (
           <Card>
             <SectionTitle>詳細成績</SectionTitle>
