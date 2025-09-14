@@ -1,4 +1,4 @@
-、// pages/index.js
+// pages/index.js
 import { useMemo, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot,
