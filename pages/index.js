@@ -77,6 +77,21 @@ export default function Home(){
         .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
         .sort((a,b)=>a.d-b.d);
       setLeaderTrend(ld);
+      // fallback leaderTrend
+
+// fallback leaderTrend when summary has none
+if(!ld.length){
+  try{
+    const rkU = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
+    const rkR = await fetch(rkU);
+    if(rkR.ok){
+      const rkJ = await rkR.json();
+      const ldp = (rkJ.leaderTrend||[]).map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) })).sort((a,b)=>a.d-b.d);
+      if(ldp.length) setLeaderTrend(ldp);
+    }
+  }catch(_){/* ignore */}
+}
+
 
       // 排行卡片
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
