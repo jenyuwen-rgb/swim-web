@@ -1,10 +1,8 @@
-// pages/index.js
 import { useMemo, useState, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot
 } from "recharts";
 
-// ------- helpers -------
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
   const sec = Number(s);
@@ -24,7 +22,6 @@ const xLabel = (v) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-// 綠色三角形點
 const TriDot = (props) => {
   const { cx, cy } = props;
   const size = 6;
@@ -42,8 +39,8 @@ export default function Home(){
   const [next, setNext] = useState(null);
   const [famStats, setFamStats] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const [trend, setTrend] = useState([]);          // 自己
-  const [leaderTrend, setLeaderTrend] = useState([]); // 榜首
+  const [trend, setTrend] = useState([]);
+  const [leaderTrend, setLeaderTrend] = useState([]);
   const [rankInfo, setRankInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -51,55 +48,48 @@ export default function Home(){
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
+    if (cursor === 0) {
+      // 切換查詢時先清空，避免殘留上一位選手的綠線
+      setLeaderTrend([]);
+      setItems([]);
+    }
 
     try{
-      // 統一吃 summary
+      // 1) summary
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
 
-      const newItems = j.items || [];
-      setItems(cursor===0 ? newItems : [...items, ...newItems]);
-      setNext(j.nextCursor ?? null);
-      setAnalysis(j.analysis || {});
-      setFamStats(j.family || {});
-
-      // 趨勢兩條線：先以日期物件排序（保險）
+      const newItems = (j.items || []).slice().sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"])));
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
         .sort((a,b)=>a.d-b.d);
+
+      setItems(cursor===0 ? newItems : [...items, ...newItems]);
+      setNext(j.nextCursor ?? null);
+      setAnalysis(j.analysis || {});
+      setFamStats(j.family || {});
       setTrend(me);
 
-      const ld = (j.leaderTrend?.points||[])
-        .filter(p=>p.seconds>0 && p.year)
-        .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
-        .sort((a,b)=>a.d-b.d);
-      setLeaderTrend(ld);
-      // fallback leaderTrend
+      const t0 = me.length ? me[0].x : null;
 
-// fallback leaderTrend when summary has none
-if(!ld.length){
-  try{
-    const rkU = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
-    const rkR = await fetch(rkU);
-    if(rkR.ok){
-      const rkJ = await rkR.json();
-      const ldp = (rkJ.leaderTrend||[]).map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) })).sort((a,b)=>a.d-b.d);
-      if(ldp.length) setLeaderTrend(ldp);
-    }
-  }catch(_){/* ignore */}
-}
-
-
-      // 排行卡片
+      // 2) rank（用來取得榜首趨勢）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
         setRankInfo(rk || null);
+
+        const ld2 = (rk.leaderTrend || [])
+          .filter(p=>p.seconds>0 && p.year)
+          .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
+          .sort((a,b)=>a.d-b.d);
+        const ld2f = t0 ? ld2.filter(p=>String(p.x) >= String(t0)) : ld2;
+        setLeaderTrend(ld2f);
       }else{
         setRankInfo(null);
+        setLeaderTrend([]);
       }
 
     }catch(e){
@@ -109,9 +99,9 @@ if(!ld.length){
     }
   }
 
-  useEffect(()=>{ /* 首次自動載入 */ search(0); /* eslint-disable-next-line */ },[]);
+  // 首次載入
+  useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
-  // PB點（自己）
   const pbPoint = useMemo(()=>{
     if(!trend.length) return null;
     let pb = trend[0];
@@ -119,7 +109,6 @@ if(!ld.length){
     return pb;
   },[trend]);
 
-  // 合併兩條線的 X 範圍（讓 X 軸刻度一致）
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
@@ -127,7 +116,6 @@ if(!ld.length){
     return Array.from(set.values()).sort((a,b)=>a.d-b.d);
   },[trend, leaderTrend]);
 
-  // 組合成 Recharts data，每筆包含 my/leader 的 y
   const chartData = useMemo(()=>{
     const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
     for(const p of trend){
@@ -158,7 +146,6 @@ if(!ld.length){
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
-        {/* 成績與專項分析 */}
         <Card>
           <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8 }}>
@@ -168,7 +155,6 @@ if(!ld.length){
           </div>
         </Card>
 
-        {/* 四式專項統計 */}
         <Card>
           <SectionTitle>四式專項統計（不分距離）</SectionTitle>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
@@ -186,7 +172,6 @@ if(!ld.length){
           </div>
         </Card>
 
-        {/* 排行卡片 */}
         <Card>
           <SectionTitle>排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
@@ -207,7 +192,6 @@ if(!ld.length){
                   <td style={td}>{r.pb_meet || "-"}</td>
                 </tr>
               ))}
-              {/* 若不在前10，補一列自己的名次 */}
               {rankInfo?.you && (rankInfo.top||[]).every(t=>t.name!==name) && (
                 <tr>
                   <td style={{...td, color:"#FFD166"}}>{rankInfo.you.rank}</td>
@@ -221,7 +205,6 @@ if(!ld.length){
           </table>
         </Card>
 
-        {/* 成績趨勢（與榜首對照） */}
         <Card>
           <SectionTitle>成績趨勢（與榜首對照）</SectionTitle>
           <div style={{ height: 380, marginTop: 8 }}>
@@ -229,8 +212,7 @@ if(!ld.length){
               <LineChart data={chartData} margin={{ top:10, right:16, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                 <XAxis dataKey="label" tick={{ fill:"#AEB4BF", fontSize:12 }}
-                  interval="preserveStartEnd"
-                  minTickGap={24}
+                  interval="preserveStartEnd" minTickGap={24}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                 <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["auto", "auto"]}
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
@@ -241,20 +223,19 @@ if(!ld.length){
                     const d = p?.payload;
                     const parts = [];
                     if (typeof d?.leader === "number") parts.push(["榜首", fmtTime(d.leader)]);
-                    if (typeof d?.my === "number") parts.push(["温心妤", fmtTime(d.my)]);
+                    if (typeof d?.my === "number") parts.push([name, fmtTime(d.my)]); // 用目前姓名
                     return parts;
                   }}
                   labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}/>
-                {/* 榜首：綠線 + 三角形點 */}
+                {/* 榜首：綠線 */}
                 <Line type="monotone" dataKey="leader" name="榜首"
                   stroke="#35D07F" strokeWidth={2}
                   dot={<TriDot/>} activeDot={<TriDot/>} connectNulls />
-                {/* 自己：藍線 + 白圓點 */}
-                <Line type="monotone" dataKey="my" name="温心妤"
+                {/* 自己：藍線 */}
+                <Line type="monotone" dataKey="my" name={name}
                   stroke="#80A7FF" strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
                   activeDot={{ r:6 }} connectNulls />
-                {/* PB 紅點（自己） */}
                 {pbPoint && (
                   <ReferenceDot x={xLabel(pbPoint.x)} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
@@ -265,7 +246,6 @@ if(!ld.length){
           </div>
         </Card>
 
-        {/* 詳細成績 */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -273,7 +253,7 @@ if(!ld.length){
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
             </thead>
             <tbody>
-              {items.slice().sort((a,b)=>a["年份"].localeCompare(b["年份"])).map((r,i)=>(
+              {items.map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
                   <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
