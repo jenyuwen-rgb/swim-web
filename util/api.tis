@@ -1,0 +1,10 @@
+// utils/api.ts
+export async function fetchStatsFamily(name: string) {
+  const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api";
+  const url = `${base}/stats/family?name=${encodeURIComponent(name)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch stats/family: ${res.status}`);
+  }
+  return res.json();
+}

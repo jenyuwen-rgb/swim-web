@@ -48,20 +48,15 @@ export default function Home(){
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
-    if (cursor === 0) {
-      // 切換查詢時先清空，避免殘留上一位選手的綠線
-      setLeaderTrend([]);
-      setItems([]);
-    }
+    if (cursor === 0) { setLeaderTrend([]); setItems([]); }
 
     try{
-      // 1) summary
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
 
-      const newItems = (j.items || []).slice().sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"])));
+      const newItems = (j.items || []).slice().sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"]))); // 升序給趨勢用
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
@@ -75,7 +70,6 @@ export default function Home(){
 
       const t0 = me.length ? me[0].x : null;
 
-      // 2) rank（用來取得榜首趨勢）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
@@ -99,8 +93,7 @@ export default function Home(){
     }
   }
 
-  // 首次載入
-  useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
+  useEffect(()=>{ search(0); /* eslint-disable-line */ },[]);
 
   const pbPoint = useMemo(()=>{
     if(!trend.length) return null;
@@ -118,12 +111,8 @@ export default function Home(){
 
   const chartData = useMemo(()=>{
     const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
-    for(const p of trend){
-      const o = byX.get(p.x); o.my = p.y;
-    }
-    for(const p of leaderTrend){
-      const o = byX.get(p.x); o.leader = p.y;
-    }
+    for(const p of trend){ const o = byX.get(p.x); o.my = p.y; }
+    for(const p of leaderTrend){ const o = byX.get(p.x); o.leader = p.y; }
     return Array.from(byX.values());
   },[mergedX, trend, leaderTrend]);
 
@@ -146,6 +135,7 @@ export default function Home(){
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
+        {/* 成績與專項分析 */}
         <Card>
           <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8 }}>
@@ -155,6 +145,7 @@ export default function Home(){
           </div>
         </Card>
 
+        {/* 四式專項統計 */}
         <Card>
           <SectionTitle>四式專項統計（不分距離）</SectionTitle>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
@@ -172,6 +163,7 @@ export default function Home(){
           </div>
         </Card>
 
+        {/* 排行卡片 */}
         <Card>
           <SectionTitle>排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
@@ -205,6 +197,7 @@ export default function Home(){
           </table>
         </Card>
 
+        {/* 成績趨勢（與榜首對照） */}
         <Card>
           <SectionTitle>成績趨勢（與榜首對照）</SectionTitle>
           <div style={{ height: 380, marginTop: 8 }}>
@@ -223,15 +216,13 @@ export default function Home(){
                     const d = p?.payload;
                     const parts = [];
                     if (typeof d?.leader === "number") parts.push(["榜首", fmtTime(d.leader)]);
-                    if (typeof d?.my === "number") parts.push([name, fmtTime(d.my)]); // 用目前姓名
+                    if (typeof d?.my === "number") parts.push([name, fmtTime(d.my)]);
                     return parts;
                   }}
                   labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}/>
-                {/* 榜首：綠線 */}
                 <Line type="monotone" dataKey="leader" name="榜首"
                   stroke="#35D07F" strokeWidth={2}
                   dot={<TriDot/>} activeDot={<TriDot/>} connectNulls />
-                {/* 自己：藍線 */}
                 <Line type="monotone" dataKey="my" name={name}
                   stroke="#80A7FF" strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
@@ -246,6 +237,7 @@ export default function Home(){
           </div>
         </Card>
 
+        {/* 詳細成績（改為倒序） */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -253,7 +245,7 @@ export default function Home(){
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
             </thead>
             <tbody>
-              {items.map((r,i)=>(
+              {items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"]))).map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
                   <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
