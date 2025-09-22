@@ -1,3 +1,4 @@
+// pages/index.js
 import { useMemo, useState, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot
@@ -23,9 +24,10 @@ const xLabel = (v) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-// 與後端一致的冬短判斷（為了 PB 標記）
-const isWinterShort = (meet) => {
-  const s = String(meet || "");
+// 判斷冬季短水道（前端版，與後端一致邏輯）
+const isWinterShortCourse = (meet) => {
+  if (!meet) return false;
+  const s = String(meet);
   return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
 };
 
@@ -56,21 +58,42 @@ export default function Home(){
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
-    if (cursor === 0) { setLeaderTrend([]); setItems([]); }
+
+    if (cursor === 0) {
+      // 切換查詢時清空狀態，避免殘留舊人的趨勢線或表格
+      setLeaderTrend([]);
+      setTrend([]);
+      setItems([]);
+      setRankInfo(null);
+    }
 
     try{
-      // summary
+      // 1) summary
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
 
-      const newItems = (j.items || []).slice()
-        .sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"]))); // 升序（給趨勢）
+      // 基礎資料
+      const newItems = (j.items || []).slice(); // 不改動原順序，後面再做排序
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
         .sort((a,b)=>a.d-b.d);
+
+      // 前端自行找 PB（排除冬短），用於詳細表格標紅
+      let pbSeconds = null;
+      for(const it of newItems){
+        if (isWinterShortCourse(it["賽事名稱"])) continue;
+        const s = Number(it.seconds);
+        if (!Number.isFinite(s) || s<=0) continue;
+        if (pbSeconds===null || s < pbSeconds) pbSeconds = s;
+      }
+      // 標記 is_pb
+      for(const it of newItems){
+        const s = Number(it.seconds);
+        it.is_pb = (pbSeconds!=null && Number.isFinite(s) && s===pbSeconds);
+      }
 
       setItems(cursor===0 ? newItems : [...items, ...newItems]);
       setNext(j.nextCursor ?? null);
@@ -78,17 +101,19 @@ export default function Home(){
       setFamStats(j.family || {});
       setTrend(me);
 
-      const t0 = me.length ? me[0].x : null;
-
-      // rank（含榜首趨勢）
+      // 2) rank（取榜首趨勢）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
         setRankInfo(rk || null);
+
         const ld2 = (rk.leaderTrend || [])
           .filter(p=>p.seconds>0 && p.year)
           .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
           .sort((a,b)=>a.d-b.d);
+
+        // 若要裁掉比自己更早的年份，可在這裡用 me[0].x 當 t0 過濾
+        const t0 = me.length ? me[0].x : null;
         const ld2f = t0 ? ld2.filter(p=>String(p.x) >= String(t0)) : ld2;
         setLeaderTrend(ld2f);
       }else{
@@ -103,16 +128,10 @@ export default function Home(){
     }
   }
 
-  useEffect(()=>{ search(0); /* eslint-disable-line */ },[]);
+  // 首次載入
+  useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
-  // PB（前端再次計一遍，為了細節表格紅字；與後端邏輯一致：剔除冬短）
-  const tablePB = useMemo(()=>{
-    const valid = items.filter(it => typeof it.seconds === "number" && it.seconds > 0 && !isWinterShort(it["賽事名稱"]));
-    if(!valid.length) return null;
-    return valid.reduce((m, it)=> it.seconds < m ? it.seconds : m, valid[0].seconds);
-  },[items]);
-
-  // PB點（自己，畫在圖上）
+  // PB點（自己）
   const pbPoint = useMemo(()=>{
     if(!trend.length) return null;
     let pb = trend[0];
@@ -120,7 +139,7 @@ export default function Home(){
     return pb;
   },[trend]);
 
-  // 合併兩條線 X 軸
+  // 合併兩條線的 X 範圍（讓 X 軸刻度一致）
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
@@ -128,13 +147,22 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.d-b.d);
   },[trend, leaderTrend]);
 
-  // Recharts 資料
+  // 組合成 Recharts data，每筆包含 my/leader 的 y
   const chartData = useMemo(()=>{
     const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
-    for(const p of trend){ const o = byX.get(p.x); o.my = p.y; }
-    for(const p of leaderTrend){ const o = byX.get(p.x); o.leader = p.y; }
+    for(const p of trend){
+      const o = byX.get(p.x); o.my = p.y;
+    }
+    for(const p of leaderTrend){
+      const o = byX.get(p.x); o.leader = p.y;
+    }
     return Array.from(byX.values());
   },[mergedX, trend, leaderTrend]);
+
+  // 詳細表格：最新在上（倒序）
+  const detailRowsDesc = useMemo(()=>{
+    return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
+  },[items]);
 
   const simplifyMeet = (s)=>s||"";
 
@@ -225,7 +253,8 @@ export default function Home(){
               <LineChart data={chartData} margin={{ top:10, right:16, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                 <XAxis dataKey="label" tick={{ fill:"#AEB4BF", fontSize:12 }}
-                  interval="preserveStartEnd" minTickGap={24}
+                  interval="preserveStartEnd"
+                  minTickGap={24}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                 <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["auto", "auto"]}
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
@@ -244,7 +273,7 @@ export default function Home(){
                 <Line type="monotone" dataKey="leader" name="榜首"
                   stroke="#35D07F" strokeWidth={2}
                   dot={<TriDot/>} activeDot={<TriDot/>} connectNulls />
-                {/* 自己：藍線 + 白圓點 */}
+                {/* 自己：藍線 + 白圓點；圖例名稱動態等於當前姓名 */}
                 <Line type="monotone" dataKey="my" name={name}
                   stroke="#80A7FF" strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
@@ -260,7 +289,7 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 詳細成績（倒序，並把 PB 標紅） */}
+        {/* 詳細成績（最新在上；PB 標紅） */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -268,25 +297,15 @@ export default function Home(){
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
             </thead>
             <tbody>
-              {items
-                .slice()
-                .sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"]))) // 最新在上
-                .map((r,i)=>{
-                  const isPB = typeof tablePB === "number" && r.seconds === tablePB && !isWinterShort(r["賽事名稱"]);
-                  return (
-                    <tr key={i}>
-                      <td style={td}>{r["年份"]}</td>
-                      <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
-                      <td style={{
-                        ...td,
-                        color: isPB ? "#FF6B6B" : "#E9E9EC",
-                        fontWeight: isPB ? 800 : 500
-                      }}>
-                        {fmtTime(r.seconds)}
-                      </td>
-                    </tr>
-                  );
-                })}
+              {detailRowsDesc.map((r,i)=>(
+                <tr key={i}>
+                  <td style={td}>{r["年份"]}</td>
+                  <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
+                  <td style={{...td, color: r.is_pb ? "#FF6B6B" : "#E9E9EC", fontWeight: r.is_pb ? 800 : 500}}>
+                    {fmtTime(r.seconds)}{r.is_pb ? "  (PB)" : ""}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
           {next != null && (
