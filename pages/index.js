@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot
 } from "recharts";
 
-// ------- helpers -------
+/* ---------- helpers ---------- */
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
   const sec = Number(s);
@@ -31,7 +31,7 @@ const isWinterShortCourse = (meet) => {
   return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
 };
 
-// 綠色三角形點（修正版，沒值就不畫）
+// 綠色三角形點（沒值就不畫）
 const TriDot = (props) => {
   const { cx, cy, value } = props;
   if (value == null || Number.isNaN(Number(value))) return null;
@@ -127,6 +127,7 @@ export default function Home(){
 
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
+  // PB點（自己）
   const pbPoint = useMemo(()=>{
     if(!trend.length) return null;
     let pb = trend[0];
@@ -134,6 +135,7 @@ export default function Home(){
     return pb;
   },[trend]);
 
+  // 合併兩條線的 X 範圍（讓 X 軸刻度一致）
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
@@ -141,20 +143,20 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.d-b.d);
   },[trend, leaderTrend]);
 
- const chartData = useMemo(()=>{
-  const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
-  for(const p of trend){
-    const o = byX.get(p.x); o.my = p.y;
-  }
-  for(const p of leaderTrend){
-    const o = byX.get(p.x);
-    if (Number.isFinite(p.y)) {   // <-- 只在數字時才寫入
-      o.leader = p.y;
+  // 組合成 Recharts data，每筆包含 my/leader 的 y
+  const chartData = useMemo(()=>{
+    const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
+    for(const p of trend){
+      const o = byX.get(p.x); o.my = p.y;
     }
-  }
-  return Array.from(byX.values());
-},[mergedX, trend, leaderTrend]);
+    for(const p of leaderTrend){
+      const o = byX.get(p.x);
+      if (Number.isFinite(p.y)) o.leader = p.y; // 只在數字時才寫入
+    }
+    return Array.from(byX.values());
+  },[mergedX, trend, leaderTrend]);
 
+  // 詳細表格：最新在上（倒序）
   const detailRowsDesc = useMemo(()=>{
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
@@ -235,7 +237,7 @@ export default function Home(){
                   <td style={td}>{rankInfo.you.pb_year || "-"}</td>
                   <td style={td}>{rankInfo.you.pb_meet || "-"}</td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </Card>
@@ -255,36 +257,45 @@ export default function Home(){
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}/>
-                <Tooltip contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
-                  formatter={(v, k, p)=>{
-                    const d = p?.payload;
-                    const parts = [];
-                    if (typeof d?.leader === "number") parts.push(["榜首", fmtTime(d.leader)]);
-                    if (typeof d?.my === "number") parts.push([name, fmtTime(d.my)]);
-                    return parts;
+                <Tooltip
+                  contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
+                  formatter={(v, k)=> {
+                    if (k === "my") return [fmtTime(v), name];       // 藍線：本人
+                    if (k === "leader") return [fmtTime(v), "榜首"]; // 綠線：榜首
+                    return [v, k];
                   }}
-                  labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}/>
+                  labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}
+                />
                 {/* 榜首：綠線 + 三角形點 */}
-                <Line type="monotone" dataKey="leader" name="榜首"
-  stroke="#35D07F"
-  strokeWidth={2}
-  connectNulls
-  dot={(props) =>
-    typeof props?.payload?.leader === "number"
-      ? <TriDot {...props} value={props.payload.leader} />
-      : null
-  }
-  activeDot={(props) =>
-    typeof props?.payload?.leader === "number"
-      ? <TriDot {...props} value={props.payload.leader} />
-      : null
-  }
-/>
+                <Line
+                  type="monotone"
+                  dataKey="leader"
+                  name="榜首"
+                  stroke="#35D07F"
+                  strokeWidth={2}
+                  connectNulls
+                  dot={(props) =>
+                    typeof props?.payload?.leader === "number"
+                      ? <TriDot {...props} value={props.payload.leader} />
+                      : null
+                  }
+                  activeDot={(props) =>
+                    typeof props?.payload?.leader === "number"
+                      ? <TriDot {...props} value={props.payload.leader} />
+                      : null
+                  }
+                />
                 {/* 自己：藍線 + 白圓點 */}
-                <Line type="monotone" dataKey="my" name={name}
-                  stroke="#80A7FF" strokeWidth={2}
+                <Line
+                  type="monotone"
+                  dataKey="my"
+                  name={name}
+                  stroke="#80A7FF"
+                  strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
-                  activeDot={{ r:6 }} connectNulls />
+                  activeDot={{ r:6 }}
+                  connectNulls
+                />
                 {/* PB 紅點（自己） */}
                 {pbPoint && (
                   <ReferenceDot x={xLabel(pbPoint.x)} y={pbPoint.y} r={6}
@@ -326,6 +337,7 @@ export default function Home(){
   );
 }
 
+/* ---------- UI bits ---------- */
 const Card = ({ children }) => (
   <section style={{
     background:"linear-gradient(180deg, rgba(31,35,43,.9), rgba(19,22,27,.98)) padding-box, linear-gradient(180deg, #2b2f36, #14171c) border-box",
@@ -342,7 +354,6 @@ const MiniCard = ({ children }) => (
 const SectionTitle = ({ children }) => (
   <div style={{ fontWeight:700, letterSpacing:.5, color:"#D8D6CB", marginBottom:6 }}>{children}</div>
 );
-
 const KV = ({ label, value, small }) => (
   <div style={{ marginRight:24 }}>
     <div style={{ fontSize: small ? 12 : 13, color:"#AEB4BF" }}>{label}</div>
@@ -352,6 +363,7 @@ const KV = ({ label, value, small }) => (
   </div>
 );
 
+/* ---------- styles ---------- */
 const inp = {
   background:"linear-gradient(180deg, #191c22, #12151a)",
   border:"1px solid #2b2f36",
@@ -360,7 +372,6 @@ const inp = {
   borderRadius:10,
   outline:"none"
 };
-
 const btn = {
   background:"linear-gradient(180deg, #2a60ff, #234ad3) padding-box, linear-gradient(180deg, #5b7cff, #1a2a6e) border-box",
   border:"1px solid transparent",
@@ -371,7 +382,6 @@ const btn = {
   boxShadow:"0 6px 14px rgba(50,90,255,.35)",
   cursor:"pointer"
 };
-
 const table = {
   width:"100%",
   marginTop:8,
@@ -382,7 +392,6 @@ const table = {
   borderRadius:12,
   overflow:"hidden"
 };
-
 const th = {
   textAlign:"left",
   fontWeight:700,
@@ -391,10 +400,8 @@ const th = {
   borderBottom:"1px solid #2c3037",
   background:"rgba(255,255,255,.02)"
 };
-
 const td = {
   color:"#E9E9EC",
   padding:"10px 12px",
   borderBottom:"1px solid #232830"
 };
- 
