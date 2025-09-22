@@ -263,8 +263,20 @@ export default function Home(){
                   labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}/>
                 {/* 榜首：綠線 + 三角形點 */}
                 <Line type="monotone" dataKey="leader" name="榜首"
-                  stroke="#35D07F" strokeWidth={2}
-                  dot={<TriDot/>} activeDot={<TriDot/>} connectNulls />
+  stroke="#35D07F"
+  strokeWidth={2}
+  connectNulls
+  dot={(props) =>
+    typeof props?.payload?.leader === "number"
+      ? <TriDot {...props} value={props.payload.leader} />
+      : null
+  }
+  activeDot={(props) =>
+    typeof props?.payload?.leader === "number"
+      ? <TriDot {...props} value={props.payload.leader} />
+      : null
+  }
+/>
                 {/* 自己：藍線 + 白圓點 */}
                 <Line type="monotone" dataKey="my" name={name}
                   stroke="#80A7FF" strokeWidth={2}
