@@ -342,5 +342,59 @@ const MiniCard = ({ children }) => (
 const SectionTitle = ({ children }) => (
   <div style={{ fontWeight:700, letterSpacing:.5, color:"#D8D6CB", marginBottom:6 }}>{children}</div>
 );
+
 const KV = ({ label, value, small }) => (
+  <div style={{ marginRight:24 }}>
+    <div style={{ fontSize: small ? 12 : 13, color:"#AEB4BF" }}>{label}</div>
+    <div style={{ fontSize: small ? 16 : 20, fontWeight:700, color:"#EDEBE3", textShadow:"0 1px 0 rgba(0,0,0,.6)" }}>
+      {value ?? "-"}
+    </div>
+  </div>
+);
+
+const inp = {
+  background:"linear-gradient(180deg, #191c22, #12151a)",
+  border:"1px solid #2b2f36",
+  color:"#E9E9EC",
+  padding:"10px 12px",
+  borderRadius:10,
+  outline:"none"
+};
+
+const btn = {
+  background:"linear-gradient(180deg, #2a60ff, #234ad3) padding-box, linear-gradient(180deg, #5b7cff, #1a2a6e) border-box",
+  border:"1px solid transparent",
+  color:"#fff",
+  fontWeight:700,
+  padding:"10px 16px",
+  borderRadius:10,
+  boxShadow:"0 6px 14px rgba(50,90,255,.35)",
+  cursor:"pointer"
+};
+
+const table = {
+  width:"100%",
+  marginTop:8,
+  borderCollapse:"separate",
+  borderSpacing:0,
+  background:"linear-gradient(180deg, rgba(26,29,35,.85), rgba(14,16,20,.95)) padding-box, linear-gradient(180deg, #2b2f36, #171a1f) border-box",
+  border:"1px solid transparent",
+  borderRadius:12,
+  overflow:"hidden"
+};
+
+const th = {
+  textAlign:"left",
+  fontWeight:700,
+  color:"#C8CDD7",
+  padding:"10px 12px",
+  borderBottom:"1px solid #2c3037",
+  background:"rgba(255,255,255,.02)"
+};
+
+const td = {
+  color:"#E9E9EC",
+  padding:"10px 12px",
+  borderBottom:"1px solid #232830"
+};
  
