@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot
 } from "recharts";
 
+// ------- helpers -------
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
   const sec = Number(s);
@@ -22,6 +23,13 @@ const xLabel = (v) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
+// 與後端一致的冬短判斷（為了 PB 標記）
+const isWinterShort = (meet) => {
+  const s = String(meet || "");
+  return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
+};
+
+// 綠色三角形點
 const TriDot = (props) => {
   const { cx, cy } = props;
   const size = 6;
@@ -39,8 +47,8 @@ export default function Home(){
   const [next, setNext] = useState(null);
   const [famStats, setFamStats] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const [trend, setTrend] = useState([]);
-  const [leaderTrend, setLeaderTrend] = useState([]);
+  const [trend, setTrend] = useState([]);          // 自己
+  const [leaderTrend, setLeaderTrend] = useState([]); // 榜首
   const [rankInfo, setRankInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -51,12 +59,14 @@ export default function Home(){
     if (cursor === 0) { setLeaderTrend([]); setItems([]); }
 
     try{
+      // summary
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
 
-      const newItems = (j.items || []).slice().sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"]))); // 升序給趨勢用
+      const newItems = (j.items || []).slice()
+        .sort((a,b)=>String(a["年份"]).localeCompare(String(b["年份"]))); // 升序（給趨勢）
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
@@ -70,11 +80,11 @@ export default function Home(){
 
       const t0 = me.length ? me[0].x : null;
 
+      // rank（含榜首趨勢）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
         setRankInfo(rk || null);
-
         const ld2 = (rk.leaderTrend || [])
           .filter(p=>p.seconds>0 && p.year)
           .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
@@ -95,6 +105,14 @@ export default function Home(){
 
   useEffect(()=>{ search(0); /* eslint-disable-line */ },[]);
 
+  // PB（前端再次計一遍，為了細節表格紅字；與後端邏輯一致：剔除冬短）
+  const tablePB = useMemo(()=>{
+    const valid = items.filter(it => typeof it.seconds === "number" && it.seconds > 0 && !isWinterShort(it["賽事名稱"]));
+    if(!valid.length) return null;
+    return valid.reduce((m, it)=> it.seconds < m ? it.seconds : m, valid[0].seconds);
+  },[items]);
+
+  // PB點（自己，畫在圖上）
   const pbPoint = useMemo(()=>{
     if(!trend.length) return null;
     let pb = trend[0];
@@ -102,6 +120,7 @@ export default function Home(){
     return pb;
   },[trend]);
 
+  // 合併兩條線 X 軸
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
@@ -109,6 +128,7 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.d-b.d);
   },[trend, leaderTrend]);
 
+  // Recharts 資料
   const chartData = useMemo(()=>{
     const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
     for(const p of trend){ const o = byX.get(p.x); o.my = p.y; }
@@ -220,13 +240,16 @@ export default function Home(){
                     return parts;
                   }}
                   labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}/>
+                {/* 榜首：綠線 + 三角形點 */}
                 <Line type="monotone" dataKey="leader" name="榜首"
                   stroke="#35D07F" strokeWidth={2}
                   dot={<TriDot/>} activeDot={<TriDot/>} connectNulls />
+                {/* 自己：藍線 + 白圓點 */}
                 <Line type="monotone" dataKey="my" name={name}
                   stroke="#80A7FF" strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
                   activeDot={{ r:6 }} connectNulls />
+                {/* PB 紅點（自己） */}
                 {pbPoint && (
                   <ReferenceDot x={xLabel(pbPoint.x)} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
@@ -237,7 +260,7 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 詳細成績（改為倒序） */}
+        {/* 詳細成績（倒序，並把 PB 標紅） */}
         <Card>
           <SectionTitle>詳細成績</SectionTitle>
           <table style={table}>
@@ -245,13 +268,25 @@ export default function Home(){
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
             </thead>
             <tbody>
-              {items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"]))).map((r,i)=>(
-                <tr key={i}>
-                  <td style={td}>{r["年份"]}</td>
-                  <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
-                  <td style={td}>{fmtTime(r.seconds)}</td>
-                </tr>
-              ))}
+              {items
+                .slice()
+                .sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"]))) // 最新在上
+                .map((r,i)=>{
+                  const isPB = typeof tablePB === "number" && r.seconds === tablePB && !isWinterShort(r["賽事名稱"]);
+                  return (
+                    <tr key={i}>
+                      <td style={td}>{r["年份"]}</td>
+                      <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
+                      <td style={{
+                        ...td,
+                        color: isPB ? "#FF6B6B" : "#E9E9EC",
+                        fontWeight: isPB ? 800 : 500
+                      }}>
+                        {fmtTime(r.seconds)}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
           {next != null && (
