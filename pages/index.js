@@ -141,16 +141,19 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.d-b.d);
   },[trend, leaderTrend]);
 
-  const chartData = useMemo(()=>{
-    const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
-    for(const p of trend){
-      const o = byX.get(p.x); o.my = p.y;
+ const chartData = useMemo(()=>{
+  const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
+  for(const p of trend){
+    const o = byX.get(p.x); o.my = p.y;
+  }
+  for(const p of leaderTrend){
+    const o = byX.get(p.x);
+    if (Number.isFinite(p.y)) {   // <-- 只在數字時才寫入
+      o.leader = p.y;
     }
-    for(const p of leaderTrend){
-      const o = byX.get(p.x); o.leader = p.y;
-    }
-    return Array.from(byX.values());
-  },[mergedX, trend, leaderTrend]);
+  }
+  return Array.from(byX.values());
+},[mergedX, trend, leaderTrend]);
 
   const detailRowsDesc = useMemo(()=>{
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
