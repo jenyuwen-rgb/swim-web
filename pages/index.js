@@ -1,7 +1,8 @@
 // pages/index.js
 import { useMemo, useState, useEffect } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceDot, Legend
 } from "recharts";
 
 /* ---------- helpers ---------- */
@@ -26,11 +27,35 @@ const tToLabel = (t) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-// 前端版冬短判斷（與後端一致）
+// 冬季短水道（前端版，與後端一致）
 const isWinterShortCourse = (meet) => {
   if (!meet) return false;
   const s = String(meet);
   return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
+};
+
+/* ---------- 自訂點樣式 ---------- */
+// 三角形（對照選手）
+const TriDot = (props) => {
+  const { cx, cy } = props;
+  const size = 5.5;
+  return (
+    <path
+      d={`M ${cx} ${cy-size} L ${cx-size} ${cy+size} L ${cx+size} ${cy+size} Z`}
+      fill="#35D07F" stroke="#0a0c10" strokeWidth="1"
+    />
+  );
+};
+// 菱形（差值）
+const DiamondDot = (props) => {
+  const { cx, cy } = props;
+  const s = 5;
+  return (
+    <path
+      d={`M ${cx} ${cy-s} L ${cx-s} ${cy} L ${cx} ${cy+s} L ${cx+s} ${cy} Z`}
+      fill="#FFD166" stroke="#0a0c10" strokeWidth="1"
+    />
+  );
 };
 
 export default function Home(){
@@ -45,7 +70,7 @@ export default function Home(){
   // 自己、對照與排行
   const [trend, setTrend] = useState([]);               // 自己
   const [rankInfo, setRankInfo] = useState(null);
-  const [compareName, setCompareName] = useState("");   // 對照選手（下拉）
+  const [compareName, setCompareName] = useState("");   // 對照選手
   const [compareTrend, setCompareTrend] = useState([]); // 對照趨勢
 
   const [loading, setLoading] = useState(false);
@@ -84,7 +109,6 @@ export default function Home(){
 
       const newItems = (j.items || []).slice();
 
-      // 自己趨勢：用毫秒時間 t 做等比例時間軸
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>{
@@ -112,7 +136,7 @@ export default function Home(){
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank：拿 top10；若首次查詢且未選擇對照，預設為 top1 並載入
+      // 2) rank（拿 top10；預設對照＝top1）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
@@ -120,7 +144,7 @@ export default function Home(){
 
         if (cursor === 0) {
           const defaultOpp = rk?.top?.[0]?.name || "";
-          const willUse = compareName || defaultOpp;     // 不覆蓋使用者既有選擇
+          const willUse = compareName || defaultOpp;
           if (!compareName && defaultOpp) setCompareName(defaultOpp);
           if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
         }
@@ -136,10 +160,9 @@ export default function Home(){
     }
   }
 
-  // 初始載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
-  // 變更對照選手或泳姿 → 重抓對照趨勢
+  // 切換對照選手或泳姿 → 重抓對照趨勢
   useEffect(()=>{
     (async ()=>{
       if (!api || !compareName) { setCompareTrend([]); return; }
@@ -160,7 +183,7 @@ export default function Home(){
     return pb;
   },[trend]);
 
-  // 合併 X（毫秒 t），確保兩線同一等比例軸
+  // 合併 X（毫秒 t）
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.t, { t:p.t, label:tToLabel(p.t) });
@@ -168,7 +191,7 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.t-b.t);
   },[trend, compareTrend]);
 
-  // 組合 data + 計算差值（我-對照），供右軸
+  // 組合 data + 差值
   const chartData = useMemo(()=>{
     const byT = new Map(mergedX.map(e=>[e.t, {...e}]));
     for(const p of trend){ const o = byT.get(p.t); o.my = p.y; }
@@ -179,7 +202,37 @@ export default function Home(){
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
-  // 詳細表格：最新在上
+  // 左、右軸動態範圍（確保黃線永遠在下方）
+  const { leftMin, leftMax, diffMin, diffMax, rightDomain } = useMemo(()=>{
+    let lmin = +Infinity, lmax = -Infinity, dmin = +Infinity, dmax = -Infinity;
+    for(const p of chartData){
+      if (typeof p.my === "number") { lmin = Math.min(lmin, p.my); lmax = Math.max(lmax, p.my); }
+      if (typeof p.opp === "number"){ lmin = Math.min(lmin, p.opp); lmax = Math.max(lmax, p.opp); }
+      if (typeof p.diff === "number"){ dmin = Math.min(dmin, p.diff); dmax = Math.max(dmax, p.diff); }
+    }
+    if (!Number.isFinite(lmin)) { lmin = 0; lmax = 1; }
+    if (!Number.isFinite(dmin)) { dmin = 0; dmax = 1; }
+
+    const gap = Math.max((lmax - lmin) * 0.05, 0.4); // 與左軸底部保留一點間隙
+    const topForRight = lmin - gap;                   // 右軸最高值（要比左軸低）
+    // 讓差值整條線都落在 topForRight 以下；若不夠，壓縮右軸區間
+    const span = Math.max(dmax - dmin, 0.1);
+    let rMax = topForRight;
+    let rMin = Math.min(dmin, rMax - span);          // 至少保留原本跨度
+
+    return { leftMin: lmin, leftMax: lmax, diffMin: dmin, diffMax: dmax, rightDomain: [rMin, rMax] };
+  },[chartData]);
+
+  // 圖例顯示文字
+  const oppRank =
+    (rankInfo?.top || []).find(x => x.name === compareName)?.rank;
+  const legendMap = {
+    my: name || "輸入選手",
+    opp: compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照",
+    diff: "差（我-對照）",
+  };
+
+  // 詳細表格（倒序）
   const detailRowsDesc = useMemo(()=>{
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
@@ -276,10 +329,18 @@ export default function Home(){
         {/* 成績趨勢（我的、對照、與差） */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
-          <div style={{ height: 380, marginTop: 8 }}>
+          <div style={{ height: 420, marginTop: 8 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top:10, right:20, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
+
+                {/* 圖例 */}
+                <Legend
+                  verticalAlign="top"
+                  height={28}
+                  formatter={(value)=>legendMap[value] ?? value}
+                />
+
                 {/* 等比例時間軸（毫秒 t） */}
                 <XAxis
                   type="number"
@@ -299,45 +360,46 @@ export default function Home(){
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
                 />
-                {/* 右軸：秒數差 */}
+                {/* 右軸：差值，永遠在左軸之下 */}
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  domain={["auto","auto"]}
+                  domain={rightDomain}
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={56} label={{ value:"差(秒)", angle:90, position:"insideRight", fill:"#AEB4BF" }}
                 />
+
                 <Tooltip
                   contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
                   formatter={(v, k)=> {
                     if (k === "my")  return [fmtTime(v), name];
-                    if (k === "opp") return [fmtTime(v), compareName || "對照"];
+                    if (k === "opp") return [fmtTime(v), compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照"];
                     if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
                     return [v, k];
                   }}
                   labelFormatter={(t)=>String(tToLabel(t))}
                 />
 
-                {/* 對照：綠線 */}
+                {/* 對照：綠線（三角形點） */}
                 <Line
                   yAxisId="left"
                   type="monotone"
                   dataKey="opp"
-                  name={compareName || "對照"}
+                  name="opp"
                   stroke="#35D07F"
                   strokeWidth={2}
                   connectNulls
-                  dot={false}
-                  activeDot={{ r:5 }}
+                  dot={<TriDot />}
+                  activeDot={<TriDot />}
                 />
 
-                {/* 自己：藍線 */}
+                {/* 自己：藍線（圓點） */}
                 <Line
                   yAxisId="left"
                   type="monotone"
                   dataKey="my"
-                  name={name}
+                  name="my"
                   stroke="#80A7FF"
                   strokeWidth={2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
@@ -345,16 +407,17 @@ export default function Home(){
                   connectNulls
                 />
 
-                {/* 差：黃虛線（右軸） */}
+                {/* 差：黃虛線（菱形點，右軸） */}
                 <Line
                   yAxisId="right"
                   type="monotone"
                   dataKey="diff"
-                  name="差（我-對照）"
+                  name="diff"
                   stroke="#FFD166"
                   strokeDasharray="5 5"
                   strokeWidth={2}
-                  dot={false}
+                  dot={<DiamondDot />}
+                  activeDot={<DiamondDot />}
                   connectNulls
                 />
 
