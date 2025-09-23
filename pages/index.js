@@ -34,9 +34,11 @@ const isWinterShortCourse = (meet) => {
   return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
 };
 
-/* ---------- 自訂點樣式 ---------- */
+/* ---------- 自訂點樣式（含安全檢查） ---------- */
 // 三角形（對照選手）
 const TriDot = (props) => {
+  const v = props?.payload?.opp;
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
   const { cx, cy } = props;
   const size = 5.5;
   return (
@@ -48,6 +50,8 @@ const TriDot = (props) => {
 };
 // 菱形（差值）
 const DiamondDot = (props) => {
+  const v = props?.payload?.diff;
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
   const { cx, cy } = props;
   const s = 5;
   return (
@@ -202,8 +206,8 @@ export default function Home(){
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
-  // 左、右軸動態範圍（確保黃線永遠在下方）
-  const { leftMin, leftMax, diffMin, diffMax, rightDomain } = useMemo(()=>{
+  // 左、右軸動態範圍（確保黃線永遠在下方，並再往下拉開距離）
+  const { leftMin, leftMax, rightDomain } = useMemo(()=>{
     let lmin = +Infinity, lmax = -Infinity, dmin = +Infinity, dmax = -Infinity;
     for(const p of chartData){
       if (typeof p.my === "number") { lmin = Math.min(lmin, p.my); lmax = Math.max(lmax, p.my); }
@@ -213,14 +217,14 @@ export default function Home(){
     if (!Number.isFinite(lmin)) { lmin = 0; lmax = 1; }
     if (!Number.isFinite(dmin)) { dmin = 0; dmax = 1; }
 
-    const gap = Math.max((lmax - lmin) * 0.05, 0.4); // 與左軸底部保留一點間隙
-    const topForRight = lmin - gap;                   // 右軸最高值（要比左軸低）
-    // 讓差值整條線都落在 topForRight 以下；若不夠，壓縮右軸區間
-    const span = Math.max(dmax - dmin, 0.1);
-    let rMax = topForRight;
-    let rMin = Math.min(dmin, rMax - span);          // 至少保留原本跨度
+    const leftSpan = Math.max(lmax - lmin, 1);
+    const gapTop = Math.max(leftSpan * 0.06, 0.6);     // 與左軸底部的保留
+    const pushDown = Math.max(leftSpan * 0.35, 1.5);   // 額外往下推，避免重疊
+    const rMax = lmin - gapTop - pushDown;             // 右軸上界一定低於左軸下界
+    const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4); // 保持合理跨度
+    const rMin = rMax - diffSpan;                      // 右軸下界更低
 
-    return { leftMin: lmin, leftMax: lmax, diffMin: dmin, diffMax: dmax, rightDomain: [rMin, rMax] };
+    return { leftMin: lmin, leftMax: lmax, rightDomain: [rMin, rMax] };
   },[chartData]);
 
   // 圖例顯示文字
@@ -252,16 +256,6 @@ export default function Home(){
             )}
           </select>
           <button onClick={()=>search(0)} disabled={loading} style={btn}>查詢</button>
-        </div>
-
-        {/* 對照選手（Top10） */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, marginBottom:12 }}>
-          <select value={compareName} onChange={(e)=>setCompareName(e.target.value)} style={inp}>
-            <option value="">（選擇對照選手：來自對手排行 Top10）</option>
-            {(rankInfo?.top||[]).map((r)=>(
-              <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
-            ))}
-          </select>
         </div>
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
@@ -321,10 +315,20 @@ export default function Home(){
                   <td style={td}>{rankInfo.you.pb_year || "-"}</td>
                   <td style={td}>{rankInfo.you.pb_meet || "-"}</td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </Card>
+
+        {/* 對照選手（Top10）— 位置移到「排行」與「成績趨勢」之間 */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, margin:"12px 0" }}>
+          <select value={compareName} onChange={(e)=>setCompareName(e.target.value)} style={inp}>
+            <option value="">（選擇對照選手：來自對手排行 Top10）</option>
+            {(rankInfo?.top||[]).map((r)=>(
+              <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
+            ))}
+          </select>
+        </div>
 
         {/* 成績趨勢（我的、對照、與差） */}
         <Card>
@@ -360,11 +364,12 @@ export default function Home(){
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
                 />
-                {/* 右軸：差值，永遠在左軸之下 */}
+                {/* 右軸：差值，永遠在左軸之下，且明顯拉開 */}
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   domain={rightDomain}
+                  tickFormatter={(v)=>v.toFixed(2)}
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={56} label={{ value:"差(秒)", angle:90, position:"insideRight", fill:"#AEB4BF" }}
