@@ -315,7 +315,7 @@ export default function Home(){
                   <td style={td}>{rankInfo.you.pb_year || "-"}</td>
                   <td style={td}>{rankInfo.you.pb_meet || "-"}</td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </Card>
