@@ -326,7 +326,7 @@ export default function Home(){
             <option value="">（選擇對照選手：來自對手排行 Top10）</option>
             {(rankInfo?.top||[]).map((r)=>(
               <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
-            )}
+            ))}
           </select>
         </div>
 
