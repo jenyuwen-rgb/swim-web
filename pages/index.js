@@ -182,7 +182,7 @@ export default function Home(){
 
         {/* 成績與專項分析 */}
         <Card>
-          <SectionTitle>成績與專項分析（當前條件）</SectionTitle>
+          <SectionTitle>成績分析</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8 }}>
             <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
             <KV label="平均成績" value={fmtTime(analysis?.avg_seconds)}/>
@@ -192,7 +192,7 @@ export default function Home(){
 
         {/* 四式專項統計 */}
         <Card>
-          <SectionTitle>四式專項統計（不分距離）</SectionTitle>
+          <SectionTitle>四式專項統計分析</SectionTitle>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
             {["蛙式","仰式","自由式","蝶式"].map((s)=>{
               const v = famStats?.[s] || {};
@@ -210,7 +210,7 @@ export default function Home(){
 
         {/* 排行卡片 */}
         <Card>
-          <SectionTitle>排行</SectionTitle>
+          <SectionTitle>潛力排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
             分母：{rankInfo?.denominator ?? "-"}　你的名次：<span style={{ color:"#FFD166", fontWeight:700 }}>{rankInfo?.rank ?? "-"}</span>　
             百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}
@@ -242,9 +242,9 @@ export default function Home(){
           </table>
         </Card>
 
-        {/* 成績趨勢（與榜首對照） */}
+        {/* 成績趨勢 */}
         <Card>
-          <SectionTitle>成績趨勢（與榜首對照）</SectionTitle>
+          <SectionTitle>成績趨勢</SectionTitle>
           <div style={{ height: 380, marginTop: 8 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top:10, right:16, bottom:6, left:0 }}>
@@ -309,7 +309,7 @@ export default function Home(){
 
         {/* 詳細成績（最新在上；PB 標紅） */}
         <Card>
-          <SectionTitle>詳細成績</SectionTitle>
+          <SectionTitle>詳細成績出處</SectionTitle>
           <table style={table}>
             <thead>
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
