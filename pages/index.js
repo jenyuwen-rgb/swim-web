@@ -42,6 +42,14 @@ const TriDot = (props) => {
   );
 };
 
+// ★ 新：把毫秒時間轉成 YY/MM
+const tToLabel = (t) => {
+  const d = new Date(t);
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth()+1).padStart(2, "0");
+  return `${yy}/${mm}`;
+};
+
 export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
@@ -50,9 +58,13 @@ export default function Home(){
   const [next, setNext] = useState(null);
   const [famStats, setFamStats] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const [trend, setTrend] = useState([]);          // 自己
-  const [leaderTrend, setLeaderTrend] = useState([]); // 榜首
+
+  // 自己、對照、排行等
+  const [trend, setTrend] = useState([]);               // 自己
   const [rankInfo, setRankInfo] = useState(null);
+  const [compareName, setCompareName] = useState("");   // 對照選手（下拉）
+  const [compareTrend, setCompareTrend] = useState([]); // 對照選手趨勢
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -61,24 +73,31 @@ export default function Home(){
     setLoading(true); setErr("");
 
     if (cursor === 0) {
-      setLeaderTrend([]);
-      setTrend([]);
       setItems([]);
+      setTrend([]);
       setRankInfo(null);
+      setCompareTrend([]);
+      // compareName 不清空，保留使用者選擇；若要重置可在此 setCompareName("");
     }
 
     try{
-      // 1) summary
+      // 1) summary（自己）
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
 
       const newItems = (j.items || []).slice();
+
+      // 自己趨勢：用 t = Date.getTime() 作為數值時間軸
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
-        .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
+        .map(p=>{
+          const d = parseYYYYMMDD(p.year);
+          return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
+        })
         .sort((a,b)=>a.d-b.d);
+      setTrend(me);
 
       // 前端自行找 PB（排除冬短），用於詳細表格標紅
       let pbSeconds = null;
@@ -97,25 +116,46 @@ export default function Home(){
       setNext(j.nextCursor ?? null);
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
-      setTrend(me);
 
-      // 2) rank（取榜首趨勢）
+      // 2) rank（取 top10 清單，並在首次查詢時預設對照選手為 top1）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
         setRankInfo(rk || null);
 
-        const ld2 = (rk.leaderTrend || [])
-          .filter(p=>p.seconds>0 && p.year)
-          .map(p=>({ x:p.year, label:xLabel(p.year), y:p.seconds, d:parseYYYYMMDD(p.year) }))
-          .sort((a,b)=>a.d-b.d);
+        if (cursor === 0) {
+          const defaultOpp = rk?.top?.[0]?.name || "";
+          // 如使用者尚未選擇對照選手，才以 top1 預設；若已選過，沿用舊值
+          setCompareName(prev => prev || defaultOpp);
 
-        const t0 = me.length ? me[0].x : null;
-        const ld2f = t0 ? ld2.filter(p=>String(p.x) >= String(t0)) : ld2;
-        setLeaderTrend(ld2f);
+          // 若有預設對照，立即載入對照趨勢
+          const who = (prev => prev || defaultOpp)(compareName);
+          if (who) {
+            const u2 = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
+            const r2 = await fetch(u2);
+            if (r2.ok) {
+              const j2 = await r2.json();
+              const opp = (j2.trend?.points||[])
+                .filter(p=>p.seconds>0 && p.year)
+                .map(p=>{
+                  const d = parseYYYYMMDD(p.year);
+                  return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
+                })
+                .sort((a,b)=>a.d-b.d);
+
+              const t0 = me.length ? me[0].t : null;
+              const opp2 = t0 ? opp.filter(p=>p.t >= t0) : opp;
+              setCompareTrend(opp2);
+            } else {
+              setCompareTrend([]);
+            }
+          } else {
+            setCompareTrend([]);
+          }
+        }
       }else{
         setRankInfo(null);
-        setLeaderTrend([]);
+        setCompareTrend([]);
       }
 
     }catch(e){
@@ -125,7 +165,33 @@ export default function Home(){
     }
   }
 
+  // 初始載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
+
+  // 使用者切換對照選手／泳姿時，載入對照趨勢
+  useEffect(()=>{
+    (async ()=>{
+      if (!api || !compareName) { setCompareTrend([]); return; }
+      try{
+        const u = `${api}/api/summary?name=${encodeURIComponent(compareName)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
+        const r = await fetch(u);
+        if(!r.ok) throw new Error("compare summary 失敗");
+        const j = await r.json();
+        const opp = (j.trend?.points||[])
+          .filter(p=>p.seconds>0 && p.year)
+          .map(p=>{
+            const d = parseYYYYMMDD(p.year);
+            return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
+          })
+          .sort((a,b)=>a.d-b.d);
+        const t0 = trend.length ? trend[0].t : null;
+        setCompareTrend(t0 ? opp.filter(p=>p.t >= t0) : opp);
+      }catch{
+        setCompareTrend([]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareName, stroke]);
 
   // PB點（自己）
   const pbPoint = useMemo(()=>{
@@ -135,26 +201,30 @@ export default function Home(){
     return pb;
   },[trend]);
 
-  // 合併兩條線的 X 範圍（讓 X 軸刻度一致）
+  // 合併兩條線的 X（用 t）
   const mergedX = useMemo(()=>{
     const set = new Map();
-    for(const p of trend) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
-    for(const p of leaderTrend) if(!set.has(p.x)) set.set(p.x, {x:p.x, label:xLabel(p.x), d:parseYYYYMMDD(p.x)});
-    return Array.from(set.values()).sort((a,b)=>a.d-b.d);
-  },[trend, leaderTrend]);
+    for(const p of trend) set.set(p.t, { t:p.t, label:tToLabel(p.t) });
+    for(const p of compareTrend) if(!set.has(p.t)) set.set(p.t, { t:p.t, label:tToLabel(p.t) });
+    return Array.from(set.values()).sort((a,b)=>a.t-b.t);
+  },[trend, compareTrend]);
 
-  // 組合成 Recharts data，每筆包含 my/leader 的 y
+  // 組合 data，並計算 diff（僅在兩邊都有值時）
   const chartData = useMemo(()=>{
-    const byX = new Map(mergedX.map(e=>[e.x, {...e}]));
+    const byT = new Map(mergedX.map(e=>[e.t, {...e}]));
     for(const p of trend){
-      const o = byX.get(p.x); o.my = p.y;
+      const o = byT.get(p.t); o.my = p.y;
     }
-    for(const p of leaderTrend){
-      const o = byX.get(p.x);
-      if (Number.isFinite(p.y)) o.leader = p.y; // 只在數字時才寫入
+    for(const p of compareTrend){
+      const o = byT.get(p.t); o.opp = p.y;
     }
-    return Array.from(byX.values());
-  },[mergedX, trend, leaderTrend]);
+    for(const o of byT.values()){
+      if (typeof o.my === "number" && typeof o.opp === "number"){
+        o.diff = o.my - o.opp;
+      }
+    }
+    return Array.from(byT.values());
+  },[mergedX, trend, compareTrend]);
 
   // 詳細表格：最新在上（倒序）
   const detailRowsDesc = useMemo(()=>{
@@ -178,6 +248,22 @@ export default function Home(){
           <button onClick={()=>search(0)} disabled={loading} style={btn}>查詢</button>
         </div>
 
+        {/* ★ 對照選手下拉（來自 Top10） */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, marginBottom:12 }}>
+          <select
+            value={compareName}
+            onChange={(e)=>setCompareName(e.target.value)}
+            style={inp}
+          >
+            <option value="">（選擇對照選手：來自對手排行 Top10）</option>
+            {(rankInfo?.top||[]).map((r)=>(
+              <option key={r.name} value={r.name}>
+                {`#${r.rank} ${r.name}`}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
         {/* 成績與專項分析 */}
@@ -192,7 +278,7 @@ export default function Home(){
 
         {/* 四式專項統計 */}
         <Card>
-          <SectionTitle>四式專項統計分析</SectionTitle>
+          <SectionTitle>四式統計分析</SectionTitle>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
             {["蛙式","仰式","自由式","蝶式"].map((s)=>{
               const v = famStats?.[s] || {};
@@ -242,51 +328,68 @@ export default function Home(){
           </table>
         </Card>
 
-        {/* 成績趨勢 */}
+        {/* 成績趨勢（我的、對照、與差） */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
           <div style={{ height: 380, marginTop: 8 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top:10, right:16, bottom:6, left:0 }}>
+              <LineChart data={chartData} margin={{ top:10, right:20, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
-                <XAxis dataKey="label" tick={{ fill:"#AEB4BF", fontSize:12 }}
-                  interval="preserveStartEnd"
-                  minTickGap={24}
-                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
-                <YAxis tickFormatter={(v)=>v.toFixed(2)} domain={["auto", "auto"]}
+                {/* 數值時間軸（等比例） */}
+                <XAxis
+                  type="number"
+                  dataKey="t"
+                  scale="time"
+                  domain={["auto","auto"]}
+                  tickFormatter={(t)=>tToLabel(t)}
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                  width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}/>
+                />
+                {/* 左軸：秒數 */}
+                <YAxis
+                  yAxisId="left"
+                  tickFormatter={(v)=>v.toFixed(2)}
+                  domain={["auto","auto"]}
+                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                  width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
+                />
+                {/* 右軸：秒數差 */}
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={["auto","auto"]}
+                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                  width={56} label={{ value:"差(秒)", angle:90, position:"insideRight", fill:"#AEB4BF" }}
+                />
                 <Tooltip
                   contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
                   formatter={(v, k)=> {
-                    if (k === "my") return [fmtTime(v), name];       // 藍線：本人
-                    if (k === "leader") return [fmtTime(v), "榜首"]; // 綠線：榜首
+                    if (k === "my")  return [fmtTime(v), name];
+                    if (k === "opp") return [fmtTime(v), compareName || "對照"];
+                    if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
                     return [v, k];
                   }}
-                  labelFormatter={(l, p)=>`${p?.[0]?.payload?.x}`}
+                  labelFormatter={(t)=>String(tToLabel(t))}
                 />
-                {/* 榜首：綠線 + 三角形點 */}
+
+                {/* 對照：綠線 */}
                 <Line
+                  yAxisId="left"
                   type="monotone"
-                  dataKey="leader"
-                  name="榜首"
+                  dataKey="opp"
+                  name={compareName || "對照"}
                   stroke="#35D07F"
                   strokeWidth={2}
                   connectNulls
-                  dot={(props) =>
-                    typeof props?.payload?.leader === "number"
-                      ? <TriDot {...props} value={props.payload.leader} />
-                      : null
-                  }
-                  activeDot={(props) =>
-                    typeof props?.payload?.leader === "number"
-                      ? <TriDot {...props} value={props.payload.leader} />
-                      : null
-                  }
+                  dot={false}
+                  activeDot={{ r:5 }}
                 />
-                {/* 自己：藍線 + 白圓點 */}
+
+                {/* 自己：藍線 */}
                 <Line
+                  yAxisId="left"
                   type="monotone"
                   dataKey="my"
                   name={name}
@@ -296,9 +399,23 @@ export default function Home(){
                   activeDot={{ r:6 }}
                   connectNulls
                 />
-                {/* PB 紅點（自己） */}
+
+                {/* 差：黃虛線（右軸） */}
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="diff"
+                  name="差（我-對照）"
+                  stroke="#FFD166"
+                  strokeDasharray="5 5"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+
+                {/* PB 紅點（自己）— 用 t 當 X */}
                 {pbPoint && (
-                  <ReferenceDot x={xLabel(pbPoint.x)} y={pbPoint.y} r={6}
+                  <ReferenceDot x={pbPoint.t} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
                     isFront label={{ value:`PB ${fmtTime(pbPoint.y)}`, position:"right", fill:"#FFC7C7", fontSize:12 }}/>
                 )}
@@ -309,7 +426,7 @@ export default function Home(){
 
         {/* 詳細成績（最新在上；PB 標紅） */}
         <Card>
-          <SectionTitle>詳細成績出處</SectionTitle>
+          <SectionTitle>詳細成績賽事出處</SectionTitle>
           <table style={table}>
             <thead>
               <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
