@@ -1,5 +1,3 @@
-// trigger deploy 09232211
-// trigger deploy
 // pages/index.js
 import { useMemo, useState, useEffect } from "react";
 import {
@@ -20,36 +18,19 @@ const parseYYYYMMDD = (v) => {
   const y = +s.slice(0,4), m = +s.slice(4,6)-1, d = +s.slice(6,8);
   return new Date(y, m, d);
 };
-const xLabel = (v) => {
-  const s = String(v || "");
-  return `${s.slice(2,4)}/${s.slice(4,6)}`;
-};
-const api = process.env.NEXT_PUBLIC_API_URL || "";
-
-// 判斷冬季短水道（前端版，與後端一致邏輯）
-const isWinterShortCourse = (meet) => {
-  if (!meet) return false;
-  const s = String(meet);
-  return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
-};
-
-// 綠色三角形點（沒值就不畫）
-const TriDot = (props) => {
-  const { cx, cy, value } = props;
-  if (value == null || Number.isNaN(Number(value))) return null;
-  const size = 6;
-  return (
-    <path d={`M ${cx} ${cy-size} L ${cx-size} ${cy+size} L ${cx+size} ${cy+size} Z`}
-      fill="#35D07F" stroke="#0a0c10" strokeWidth={1}/>
-  );
-};
-
-// ★ 新：把毫秒時間轉成 YY/MM
 const tToLabel = (t) => {
   const d = new Date(t);
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth()+1).padStart(2, "0");
   return `${yy}/${mm}`;
+};
+const api = process.env.NEXT_PUBLIC_API_URL || "";
+
+// 前端版冬短判斷（與後端一致）
+const isWinterShortCourse = (meet) => {
+  if (!meet) return false;
+  const s = String(meet);
+  return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
 };
 
 export default function Home(){
@@ -61,25 +42,37 @@ export default function Home(){
   const [famStats, setFamStats] = useState(null);
   const [analysis, setAnalysis] = useState(null);
 
-  // 自己、對照、排行等
+  // 自己、對照與排行
   const [trend, setTrend] = useState([]);               // 自己
   const [rankInfo, setRankInfo] = useState(null);
   const [compareName, setCompareName] = useState("");   // 對照選手（下拉）
-  const [compareTrend, setCompareTrend] = useState([]); // 對照選手趨勢
+  const [compareTrend, setCompareTrend] = useState([]); // 對照趨勢
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  const loadOpponentTrend = async (who, baseStartT) => {
+    if (!who) { setCompareTrend([]); return; }
+    const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error("compare summary 失敗");
+    const j = await r.json();
+    const opp = (j.trend?.points||[])
+      .filter(p=>p.seconds>0 && p.year)
+      .map(p=>{
+        const d = parseYYYYMMDD(p.year);
+        return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
+      })
+      .sort((a,b)=>a.d-b.d);
+    setCompareTrend(baseStartT ? opp.filter(p=>p.t >= baseStartT) : opp);
+  };
 
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
 
     if (cursor === 0) {
-      setItems([]);
-      setTrend([]);
-      setRankInfo(null);
-      setCompareTrend([]);
-      // compareName 不清空，保留使用者選擇；若要重置可在此 setCompareName("");
+      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]);
     }
 
     try{
@@ -91,7 +84,7 @@ export default function Home(){
 
       const newItems = (j.items || []).slice();
 
-      // 自己趨勢：用 t = Date.getTime() 作為數值時間軸
+      // 自己趨勢：用毫秒時間 t 做等比例時間軸
       const me = (j.trend?.points||[])
         .filter(p=>p.seconds>0 && p.year)
         .map(p=>{
@@ -101,7 +94,7 @@ export default function Home(){
         .sort((a,b)=>a.d-b.d);
       setTrend(me);
 
-      // 前端自行找 PB（排除冬短），用於詳細表格標紅
+      // PB（排冬短）供表格標紅
       let pbSeconds = null;
       for(const it of newItems){
         if (isWinterShortCourse(it["賽事名稱"])) continue;
@@ -119,7 +112,7 @@ export default function Home(){
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank（取 top10 清單，並在首次查詢時預設對照選手為 top1）
+      // 2) rank：拿 top10；若首次查詢且未選擇對照，預設為 top1 並載入
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
       if(rr.ok){
         const rk = await rr.json();
@@ -127,33 +120,9 @@ export default function Home(){
 
         if (cursor === 0) {
           const defaultOpp = rk?.top?.[0]?.name || "";
-          // 如使用者尚未選擇對照選手，才以 top1 預設；若已選過，沿用舊值
-          setCompareName(prev => prev || defaultOpp);
-
-          // 若有預設對照，立即載入對照趨勢
-          const who = (prev => prev || defaultOpp)(compareName);
-          if (who) {
-            const u2 = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
-            const r2 = await fetch(u2);
-            if (r2.ok) {
-              const j2 = await r2.json();
-              const opp = (j2.trend?.points||[])
-                .filter(p=>p.seconds>0 && p.year)
-                .map(p=>{
-                  const d = parseYYYYMMDD(p.year);
-                  return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
-                })
-                .sort((a,b)=>a.d-b.d);
-
-              const t0 = me.length ? me[0].t : null;
-              const opp2 = t0 ? opp.filter(p=>p.t >= t0) : opp;
-              setCompareTrend(opp2);
-            } else {
-              setCompareTrend([]);
-            }
-          } else {
-            setCompareTrend([]);
-          }
+          const willUse = compareName || defaultOpp;     // 不覆蓋使用者既有選擇
+          if (!compareName && defaultOpp) setCompareName(defaultOpp);
+          if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
         }
       }else{
         setRankInfo(null);
@@ -170,24 +139,12 @@ export default function Home(){
   // 初始載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
-  // 使用者切換對照選手／泳姿時，載入對照趨勢
+  // 變更對照選手或泳姿 → 重抓對照趨勢
   useEffect(()=>{
     (async ()=>{
       if (!api || !compareName) { setCompareTrend([]); return; }
       try{
-        const u = `${api}/api/summary?name=${encodeURIComponent(compareName)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
-        const r = await fetch(u);
-        if(!r.ok) throw new Error("compare summary 失敗");
-        const j = await r.json();
-        const opp = (j.trend?.points||[])
-          .filter(p=>p.seconds>0 && p.year)
-          .map(p=>{
-            const d = parseYYYYMMDD(p.year);
-            return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
-          })
-          .sort((a,b)=>a.d-b.d);
-        const t0 = trend.length ? trend[0].t : null;
-        setCompareTrend(t0 ? opp.filter(p=>p.t >= t0) : opp);
+        await loadOpponentTrend(compareName, trend.length ? trend[0].t : null);
       }catch{
         setCompareTrend([]);
       }
@@ -203,7 +160,7 @@ export default function Home(){
     return pb;
   },[trend]);
 
-  // 合併兩條線的 X（用 t）
+  // 合併 X（毫秒 t），確保兩線同一等比例軸
   const mergedX = useMemo(()=>{
     const set = new Map();
     for(const p of trend) set.set(p.t, { t:p.t, label:tToLabel(p.t) });
@@ -211,24 +168,18 @@ export default function Home(){
     return Array.from(set.values()).sort((a,b)=>a.t-b.t);
   },[trend, compareTrend]);
 
-  // 組合 data，並計算 diff（僅在兩邊都有值時）
+  // 組合 data + 計算差值（我-對照），供右軸
   const chartData = useMemo(()=>{
     const byT = new Map(mergedX.map(e=>[e.t, {...e}]));
-    for(const p of trend){
-      const o = byT.get(p.t); o.my = p.y;
-    }
-    for(const p of compareTrend){
-      const o = byT.get(p.t); o.opp = p.y;
-    }
+    for(const p of trend){ const o = byT.get(p.t); o.my = p.y; }
+    for(const p of compareTrend){ const o = byT.get(p.t); o.opp = p.y; }
     for(const o of byT.values()){
-      if (typeof o.my === "number" && typeof o.opp === "number"){
-        o.diff = o.my - o.opp;
-      }
+      if (typeof o.my === "number" && typeof o.opp === "number") o.diff = o.my - o.opp;
     }
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
-  // 詳細表格：最新在上（倒序）
+  // 詳細表格：最新在上
   const detailRowsDesc = useMemo(()=>{
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
@@ -250,18 +201,12 @@ export default function Home(){
           <button onClick={()=>search(0)} disabled={loading} style={btn}>查詢</button>
         </div>
 
-        {/* ★ 對照選手下拉（來自 Top10） */}
+        {/* 對照選手（Top10） */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, marginBottom:12 }}>
-          <select
-            value={compareName}
-            onChange={(e)=>setCompareName(e.target.value)}
-            style={inp}
-          >
+          <select value={compareName} onChange={(e)=>setCompareName(e.target.value)} style={inp}>
             <option value="">（選擇對照選手：來自對手排行 Top10）</option>
             {(rankInfo?.top||[]).map((r)=>(
-              <option key={r.name} value={r.name}>
-                {`#${r.rank} ${r.name}`}
-              </option>
+              <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
             ))}
           </select>
         </div>
@@ -304,9 +249,7 @@ export default function Home(){
             百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}
           </div>
           <table style={table}>
-            <thead>
-              <tr><th style={th}>名次</th><th style={th}>選手</th><th style={th}>PB</th><th style={th}>年份</th><th style={th}>賽事</th></tr>
-            </thead>
+            <thead><tr><th style={th}>名次</th><th style={th}>選手</th><th style={th}>PB</th><th style={th}>年份</th><th style={th}>賽事</th></tr></thead>
             <tbody>
               {(rankInfo?.top || []).map((r,i)=>(
                 <tr key={i}>
@@ -337,7 +280,7 @@ export default function Home(){
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top:10, right:20, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
-                {/* 數值時間軸（等比例） */}
+                {/* 等比例時間軸（毫秒 t） */}
                 <XAxis
                   type="number"
                   dataKey="t"
@@ -415,7 +358,7 @@ export default function Home(){
                   connectNulls
                 />
 
-                {/* PB 紅點（自己）— 用 t 當 X */}
+                {/* PB 紅點（自己） */}
                 {pbPoint && (
                   <ReferenceDot x={pbPoint.t} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
@@ -430,9 +373,7 @@ export default function Home(){
         <Card>
           <SectionTitle>詳細成績賽事出處</SectionTitle>
           <table style={table}>
-            <thead>
-              <tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr>
-            </thead>
+            <thead><tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr></thead>
             <tbody>
               {detailRowsDesc.map((r,i)=>(
                 <tr key={i}>
@@ -523,4 +464,4 @@ const td = {
   color:"#E9E9EC",
   padding:"10px 12px",
   borderBottom:"1px solid #232830"
-};// trigger redeploy 2025年 9月23日 週二 21時40分31秒 CST
+};
