@@ -1,5 +1,5 @@
 // pages/index.js
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, Legend
@@ -79,6 +79,28 @@ export default function Home(){
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // --- 右軸可拖曳/滾輪平移 ---
+  const [rightShift, setRightShift] = useState(0);     // 以秒為單位的位移
+  const chartBoxRef = useRef(null);
+  const draggingRef = useRef({ active:false, startY:0, startShift:0 });
+
+  const onWheelRight = (e, span=1) => {
+    e.preventDefault();
+    const step = (rightBase.span || 1) / 10; // 每格位移
+    setRightShift(s => s + Math.sign(e.deltaY) * step);
+  };
+  const onPointerDown = (e) => {
+    draggingRef.current = { active:true, startY:e.clientY, startShift:rightShift };
+  };
+  const onPointerMove = (e) => {
+    if (!draggingRef.current.active || !chartBoxRef.current) return;
+    const rect = chartBoxRef.current.getBoundingClientRect();
+    const px = e.clientY - draggingRef.current.startY;     // 向下為正
+    const secPerPx = (rightBase.span || 1) / Math.max(rect.height, 1);
+    setRightShift(draggingRef.current.startShift + px * secPerPx);
+  };
+  const onPointerUp = () => { draggingRef.current.active = false; };
 
   const loadOpponentTrend = async (who, baseStartT) => {
     if (!who) { setCompareTrend([]); return; }
@@ -206,8 +228,8 @@ export default function Home(){
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
-  // 左、右軸動態範圍（確保黃線永遠在下方，並再往下拉開距離）
-  const { leftMin, leftMax, rightDomain } = useMemo(()=>{
+  /* ===== 右軸 domain：先計基準，再加位移 ===== */
+  const rightBase = useMemo(()=>{
     let lmin = +Infinity, lmax = -Infinity, dmin = +Infinity, dmax = -Infinity;
     for(const p of chartData){
       if (typeof p.my === "number") { lmin = Math.min(lmin, p.my); lmax = Math.max(lmax, p.my); }
@@ -218,14 +240,19 @@ export default function Home(){
     if (!Number.isFinite(dmin)) { dmin = 0; dmax = 1; }
 
     const leftSpan = Math.max(lmax - lmin, 1);
-    const gapTop = Math.max(leftSpan * 0.06, 0.6);     // 與左軸底部的保留
-    const pushDown = Math.max(leftSpan * 0.35, 1.5);   // 額外往下推，避免重疊
-    const rMax = lmin - gapTop - pushDown;             // 右軸上界一定低於左軸下界
-    const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4); // 保持合理跨度
-    const rMin = rMax - diffSpan;                      // 右軸下界更低
+    const gapTop = Math.max(leftSpan * 0.06, 0.6);   // 與左軸底部留白
+    const pushDown = Math.max(leftSpan * 0.35, 1.5); // 額外下推，避免重疊
+    const rMax = lmin - gapTop - pushDown;           // 右軸上界 < 左軸下界
+    const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4);
+    const rMin = rMax - diffSpan;                    // 下界
 
-    return { leftMin: lmin, leftMax: lmax, rightDomain: [rMin, rMax] };
+    return { leftMin:lmin, leftMax:lmax, rMin, rMax, span: rMax - rMin };
   },[chartData]);
+
+  const rightDomain = useMemo(()=>{
+    const { rMin, rMax } = rightBase;
+    return [rMin + rightShift, rMax + rightShift];
+  },[rightBase, rightShift]);
 
   // 圖例顯示文字
   const oppRank =
@@ -233,7 +260,7 @@ export default function Home(){
   const legendMap = {
     my: name || "輸入選手",
     opp: compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照",
-    diff: "差（我-對照）",
+    diff: "差距",
   };
 
   // 詳細表格（倒序）
@@ -255,7 +282,7 @@ export default function Home(){
               <option key={x} value={x}>{x}</option>
             )}
           </select>
-          <button onClick={()=>search(0)} disabled={loading} style={btn}>查詢</button>
+          <button onClick={()=>{ setRightShift(0); search(0); }} disabled={loading} style={btn}>查詢</button>
         </div>
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
@@ -288,7 +315,7 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 排行卡片 */}
+        {/* 潛力排行 */}
         <Card>
           <SectionTitle>潛力排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
@@ -320,7 +347,7 @@ export default function Home(){
           </table>
         </Card>
 
-        {/* 對照選手（Top10）— 位置移到「排行」與「成績趨勢」之間 */}
+        {/* 對照選手選單 */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, margin:"12px 0" }}>
           <select value={compareName} onChange={(e)=>setCompareName(e.target.value)} style={inp}>
             <option value="">（選擇對照選手：來自對手排行 Top10）</option>
@@ -333,19 +360,35 @@ export default function Home(){
         {/* 成績趨勢（我的、對照、與差） */}
         <Card>
           <SectionTitle>成績趨勢</SectionTitle>
-          <div style={{ height: 420, marginTop: 8 }}>
+          <div
+            ref={chartBoxRef}
+            style={{ height: 420, marginTop: 8, position:"relative" }}
+            onPointerUp={onPointerUp}
+            onPointerLeave={onPointerUp}
+          >
+            {/* 右側拖拉/滾輪把手 */}
+            <div
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onWheel={(e)=>onWheelRight(e)}
+              title="拖曳或滾輪：上下平移右側『差(秒)』"
+              style={{
+                position:"absolute", top:0, right:0, width:28, height:"100%",
+                cursor:"ns-resize",
+                background:"linear-gradient(90deg, transparent, rgba(255,255,255,.04) 40%, transparent)",
+                zIndex:2
+              }}
+            />
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top:10, right:20, bottom:6, left:0 }}>
+              <LineChart data={chartData} margin={{ top:10, right:32, bottom:6, left:0 }}>
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
 
-                {/* 圖例 */}
                 <Legend
                   verticalAlign="top"
                   height={28}
                   formatter={(value)=>legendMap[value] ?? value}
                 />
 
-                {/* 等比例時間軸（毫秒 t） */}
                 <XAxis
                   type="number"
                   dataKey="t"
@@ -355,7 +398,6 @@ export default function Home(){
                   tick={{ fill:"#AEB4BF", fontSize:12 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                 />
-                {/* 左軸：秒數 */}
                 <YAxis
                   yAxisId="left"
                   tickFormatter={(v)=>v.toFixed(2)}
@@ -364,7 +406,6 @@ export default function Home(){
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
                 />
-                {/* 右軸：差值，永遠在左軸之下，且明顯拉開 */}
                 <YAxis
                   yAxisId="right"
                   orientation="right"
@@ -386,7 +427,6 @@ export default function Home(){
                   labelFormatter={(t)=>String(tToLabel(t))}
                 />
 
-                {/* 對照：綠線（三角形點） */}
                 <Line
                   yAxisId="left"
                   type="monotone"
@@ -399,7 +439,6 @@ export default function Home(){
                   activeDot={<TriDot />}
                 />
 
-                {/* 自己：藍線（圓點） */}
                 <Line
                   yAxisId="left"
                   type="monotone"
@@ -412,7 +451,6 @@ export default function Home(){
                   connectNulls
                 />
 
-                {/* 差：黃虛線（菱形點，右軸） */}
                 <Line
                   yAxisId="right"
                   type="monotone"
@@ -426,7 +464,6 @@ export default function Home(){
                   connectNulls
                 />
 
-                {/* PB 紅點（自己） */}
                 {pbPoint && (
                   <ReferenceDot x={pbPoint.t} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
@@ -434,6 +471,11 @@ export default function Home(){
                 )}
               </LineChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* 控制列 */}
+          <div style={{ display:"flex", gap:8, marginTop:8 }}>
+            <button onClick={()=>setRightShift(0)} style={{...btn, padding:"6px 10px"}}>重置差(秒)位置</button>
           </div>
         </Card>
 
