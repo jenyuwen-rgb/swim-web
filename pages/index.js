@@ -87,7 +87,7 @@ export default function Home(){
 
   const onWheelRight = (e, span=1) => {
     e.preventDefault();
-    const step = (rightBase.span || 1) / 10; // 每格位移
+    const step = (rightBase.span || 1) / 2; // 每格位移
     setRightShift(s => s + Math.sign(e.deltaY) * step);
   };
   const onPointerDown = (e) => {
@@ -97,7 +97,7 @@ export default function Home(){
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
     const px = e.clientY - draggingRef.current.startY;     // 向下為正
-    const secPerPx = (rightBase.span || 1) / Math.max(rect.height, 1);
+    const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
   };
   const onPointerUp = () => { draggingRef.current.active = false; };
