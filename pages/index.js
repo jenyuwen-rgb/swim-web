@@ -2,7 +2,8 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceDot, Legend
+  ResponsiveContainer, ReferenceDot, Legend,
+  BarChart, Bar, LabelList
 } from "recharts";
 
 /* ---------- helpers ---------- */
@@ -35,7 +36,6 @@ const isWinterShortCourse = (meet) => {
 };
 
 /* ---------- 自訂點樣式（含安全檢查） ---------- */
-// 三角形（對照選手）
 const TriDot = (props) => {
   const v = props?.payload?.opp;
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
@@ -48,7 +48,6 @@ const TriDot = (props) => {
     />
   );
 };
-// 菱形（差值）
 const DiamondDot = (props) => {
   const v = props?.payload?.diff;
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
@@ -81,7 +80,7 @@ export default function Home(){
   const [err, setErr] = useState("");
 
   // --- 右軸可拖曳/滾輪平移 ---
-  const [rightShift, setRightShift] = useState(0);     // 以秒為單位的位移
+  const [rightShift, setRightShift] = useState(0);
   const chartBoxRef = useRef(null);
   const draggingRef = useRef({ active:false, startY:0, startShift:0 });
 
@@ -96,7 +95,7 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
-    const px = e.clientY - draggingRef.current.startY;     // 向下為正
+    const px = e.clientY - draggingRef.current.startY;
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
   };
@@ -240,11 +239,11 @@ export default function Home(){
     if (!Number.isFinite(dmin)) { dmin = 0; dmax = 1; }
 
     const leftSpan = Math.max(lmax - lmin, 1);
-    const gapTop = Math.max(leftSpan * 0.06, 0.6);   // 與左軸底部留白
-    const pushDown = Math.max(leftSpan * 0.35, 1.5); // 額外下推，避免重疊
-    const rMax = lmin - gapTop - pushDown;           // 右軸上界 < 左軸下界
+    const gapTop = Math.max(leftSpan * 0.06, 0.6);
+    const pushDown = Math.max(leftSpan * 0.35, 1.5);
+    const rMax = lmin - gapTop - pushDown;
     const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4);
-    const rMin = rMax - diffSpan;                    // 下界
+    const rMin = rMax - diffSpan;
 
     return { leftMin:lmin, leftMax:lmax, rMin, rMax, span: rMax - rMin };
   },[chartData]);
@@ -267,6 +266,42 @@ export default function Home(){
   const detailRowsDesc = useMemo(()=>{
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
+
+  // ============ 潛力排行：Bar Chart =============
+  const rankBarData = useMemo(()=>{
+    if (!rankInfo) return [];
+    const top = (rankInfo.top || []).map((r, idx) => ({
+      key: `top-${idx+1}`,
+      label: `#${idx+1}`,
+      name: r.name,
+      seconds: r.pb_seconds,
+      isYou: r.name === name
+    }));
+    const you = rankInfo.you;
+    const isYouInTop = top.some(x => x.isYou);
+    if (you && !isYouInTop) {
+      top.push({
+        key: `you-${you.rank}`,
+        label: `你(#${you.rank})`,
+        name: you.name,
+        seconds: you.pb_seconds,
+        isYou: true
+      });
+    }
+    return top;
+  }, [rankInfo, name]);
+
+  const barDomain = useMemo(()=>{
+    if (!rankBarData.length) return ["auto","auto"];
+    let min = Infinity, max = -Infinity;
+    rankBarData.forEach(d => {
+      const v = Number(d.seconds);
+      if (Number.isFinite(v)) { min = Math.min(min, v); max = Math.max(max, v); }
+    });
+    if (!Number.isFinite(min)) return ["auto","auto"];
+    const pad = Math.max((max-min)*0.08, 0.4);
+    return [Math.max(0, min - pad), max + pad];
+  }, [rankBarData]);
 
   const simplifyMeet = (s)=>s||"";
 
@@ -315,36 +350,46 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 潛力排行 */}
+        {/* 潛力排行（Bar Chart） */}
         <Card>
           <SectionTitle>潛力排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
             分母：{rankInfo?.denominator ?? "-"}　你的名次：<span style={{ color:"#FFD166", fontWeight:700 }}>{rankInfo?.rank ?? "-"}</span>　
             百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}
           </div>
-          <table style={table}>
-            <thead><tr><th style={th}>名次</th><th style={th}>選手</th><th style={th}>PB</th><th style={th}>年份</th><th style={th}>賽事</th></tr></thead>
-            <tbody>
-              {(rankInfo?.top || []).map((r,i)=>(
-                <tr key={i}>
-                  <td style={td}>{i+1}</td>
-                  <td style={{...td, color: r.name===name ? "#FF6B6B":"#E9E9EC", fontWeight: r.name===name ? 800:500 }}>{r.name}</td>
-                  <td style={td}>{fmtTime(r.pb_seconds)}</td>
-                  <td style={td}>{r.pb_year || "-"}</td>
-                  <td style={td}>{r.pb_meet || "-"}</td>
-                </tr>
-              ))}
-              {rankInfo?.you && (rankInfo.top||[]).every(t=>t.name!==name) && (
-                <tr>
-                  <td style={{...td, color:"#FFD166"}}>{rankInfo.you.rank}</td>
-                  <td style={{...td, color:"#FF6B6B", fontWeight:800}}>{rankInfo.you.name}</td>
-                  <td style={td}>{fmtTime(rankInfo.you.pb_seconds)}</td>
-                  <td style={td}>{rankInfo.you.pb_year || "-"}</td>
-                  <td style={td}>{rankInfo.you.pb_meet || "-"}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+          <div style={{ width:"100%", height:340 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={rankBarData} margin={{ top:10, right:10, bottom:6, left:10 }}>
+                <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                />
+                <YAxis
+                  domain={barDomain}
+                  tickFormatter={(v)=>v.toFixed(2)}
+                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                  width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
+                />
+                <Tooltip
+                  contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
+                  formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
+                  labelFormatter={(l)=>String(l)}
+                />
+                <Bar dataKey="seconds" radius={[6,6,0,0]}>
+                  <LabelList
+                    dataKey="name"
+                    position="top"
+                    style={{ fill:"#EDEBE3", fontSize:12, fontWeight:700, textShadow:"0 1px 0 rgba(0,0,0,.6)" }}
+                    formatter={(v, entry)=> entry.isYou ? `你 · ${v}` : v}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </Card>
 
         {/* 對照選手選單 */}
