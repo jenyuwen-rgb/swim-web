@@ -85,9 +85,9 @@ export default function Home(){
   const chartBoxRef = useRef(null);
   const draggingRef = useRef({ active:false, startY:0, startShift:0 });
 
-  const onWheelRight = (e, span=1) => {
+  const onWheelRight = (e) => {
     e.preventDefault();
-    const step = (rightBase.span || 1) / 2; // 每格位移
+    const step = (rightBase.span || 1) / 2;
     setRightShift(s => s + Math.sign(e.deltaY) * step);
   };
   const onPointerDown = (e) => {
@@ -370,7 +370,7 @@ export default function Home(){
             <div
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
-              onWheel={(e)=>onWheelRight(e)}
+              onWheel={onWheelRight}
               title="拖曳或滾輪：上下平移右側『差(秒)』"
               style={{
                 position:"absolute", top:0, right:0, width:28, height:"100%",
@@ -427,6 +427,7 @@ export default function Home(){
                   labelFormatter={(t)=>String(tToLabel(t))}
                 />
 
+                {/* 對照：綠線 */}
                 <Line
                   yAxisId="left"
                   type="monotone"
@@ -439,6 +440,7 @@ export default function Home(){
                   activeDot={<TriDot />}
                 />
 
+                {/* 自己：藍線 */}
                 <Line
                   yAxisId="left"
                   type="monotone"
@@ -451,6 +453,7 @@ export default function Home(){
                   connectNulls
                 />
 
+                {/* 差：黃虛線（右軸） */}
                 <Line
                   yAxisId="right"
                   type="monotone"
@@ -483,12 +486,24 @@ export default function Home(){
         <Card>
           <SectionTitle>詳細成績賽事出處</SectionTitle>
           <table style={table}>
-            <thead><tr><th style={th}>年份</th><th style={th}>賽事</th><th style={th}>秒數</th></tr></thead>
+            <thead>
+              <tr>
+                <th style={th}>年份</th>
+                <th style={th}>賽事</th>
+                <th style={th}>姓名</th>
+                <th style={th}>性別</th>
+                <th style={th}>出生年</th>
+                <th style={th}>秒數</th>
+              </tr>
+            </thead>
             <tbody>
               {detailRowsDesc.map((r,i)=>(
                 <tr key={i}>
                   <td style={td}>{r["年份"]}</td>
                   <td style={td}>{simplifyMeet(r["賽事名稱"])}</td>
+                  <td style={td}>{r["姓名"]}</td>
+                  <td style={td}>{r["性別"] || "-"}</td>
+                  <td style={td}>{r["出生年"] || "-"}</td>
                   <td style={{...td, color: r.is_pb ? "#FF6B6B" : "#E9E9EC", fontWeight: r.is_pb ? 800 : 500}}>
                     {fmtTime(r.seconds)}{r.is_pb ? "  (PB)" : ""}
                   </td>
