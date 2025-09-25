@@ -28,6 +28,14 @@ const tToLabel = (t) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
+// 後端若偶發 500/HTML 錯誤頁，避免整頁炸裂
+const safeJson = async (res, what) => {
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  if (!res.ok) throw new Error(`${what} 失敗（HTTP ${res.status}）`);
+  if (!ct.includes("application/json")) throw new Error(`${what} 回傳非 JSON`);
+  return res.json();
+};
+
 // 冬季短水道（前端版，與後端一致）
 const isWinterShortCourse = (meet) => {
   if (!meet) return false;
@@ -105,8 +113,7 @@ export default function Home(){
     if (!who) { setCompareTrend([]); return; }
     const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
     const r = await fetch(u);
-    if (!r.ok) throw new Error("compare summary 失敗");
-    const j = await r.json();
+    const j = await safeJson(r, "compare summary");
     const opp = (j.trend?.points||[])
       .filter(p=>p.seconds>0 && p.year)
       .map(p=>{
@@ -129,8 +136,7 @@ export default function Home(){
       // 1) summary（自己）
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
-      if(!r.ok) throw new Error("summary 取得失敗");
-      const j = await r.json();
+      const j = await safeJson(r, "summary");
 
       const newItems = (j.items || []).slice();
 
@@ -163,8 +169,8 @@ export default function Home(){
 
       // 2) rank（拿 top10；預設對照＝top1）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
-      if(rr.ok){
-        const rk = await rr.json();
+      if (rr.ok){
+        const rk = await safeJson(rr, "rank");
         setRankInfo(rk || null);
 
         if (cursor === 0) {
