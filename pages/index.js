@@ -28,14 +28,6 @@ const tToLabel = (t) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-// 後端若偶發 500/HTML 錯誤頁，避免整頁炸裂
-const safeJson = async (res, what) => {
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  if (!res.ok) throw new Error(`${what} 失敗（HTTP ${res.status}）`);
-  if (!ct.includes("application/json")) throw new Error(`${what} 回傳非 JSON`);
-  return res.json();
-};
-
 // 冬季短水道（前端版，與後端一致）
 const isWinterShortCourse = (meet) => {
   if (!meet) return false;
@@ -113,7 +105,8 @@ export default function Home(){
     if (!who) { setCompareTrend([]); return; }
     const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
     const r = await fetch(u);
-    const j = await safeJson(r, "compare summary");
+    if (!r.ok) throw new Error("compare summary 失敗");
+    const j = await r.json();
     const opp = (j.trend?.points||[])
       .filter(p=>p.seconds>0 && p.year)
       .map(p=>{
@@ -136,7 +129,8 @@ export default function Home(){
       // 1) summary（自己）
       const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
-      const j = await safeJson(r, "summary");
+      if(!r.ok) throw new Error("summary 取得失敗");
+      const j = await r.json();
 
       const newItems = (j.items || []).slice();
 
@@ -169,8 +163,8 @@ export default function Home(){
 
       // 2) rank（拿 top10；預設對照＝top1）
       const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
-      if (rr.ok){
-        const rk = await safeJson(rr, "rank");
+      if(rr.ok){
+        const rk = await rr.json();
         setRankInfo(rk || null);
 
         if (cursor === 0) {
@@ -366,7 +360,11 @@ export default function Home(){
 
           <div style={{ width:"100%", height:340 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rankBarData} margin={{ top:10, right:10, bottom:6, left:10 }}>
+              <BarChart
+                data={rankBarData}
+                margin={{ top:10, right:10, bottom:6, left:10 }}
+                isAnimationActive={false}
+              >
                 <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                 <XAxis
                   dataKey="label"
@@ -385,12 +383,12 @@ export default function Home(){
                   formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
                   labelFormatter={(l)=>String(l)}
                 />
-                <Bar dataKey="seconds" radius={[6,6,0,0]}>
+                <Bar dataKey="seconds" radius={[6,6,0,0]} isAnimationActive={false}>
                   <LabelList
                     dataKey="name"
                     position="top"
                     style={{ fill:"#EDEBE3", fontSize:12, fontWeight:700, textShadow:"0 1px 0 rgba(0,0,0,.6)" }}
-                    formatter={(v, entry)=> entry.isYou ? `你 · ${v}` : v}
+                    formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
                   />
                 </Bar>
               </BarChart>
