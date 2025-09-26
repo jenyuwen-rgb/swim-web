@@ -64,6 +64,7 @@ const DiamondDot = (props) => {
 export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
+  const [ageTol, setAgeTol] = useState(1); // 年齡誤差：0=同年、1=±1
 
   const [items, setItems] = useState([]);
   const [next, setNext] = useState(null);
@@ -162,7 +163,8 @@ export default function Home(){
       setFamStats(j.family || {});
 
       // 2) rank（拿 top10；預設對照＝top1）
-      const rr = await fetch(`${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`);
+      const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
+      const rr = await fetch(rkUrl);
       if(rr.ok){
         const rk = await rr.json();
         setRankInfo(rk || null);
@@ -185,6 +187,7 @@ export default function Home(){
     }
   }
 
+  // 初次載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
   // 切換對照選手或泳姿 → 重抓對照趨勢
@@ -310,13 +313,22 @@ export default function Home(){
       <div style={{ maxWidth:1080, margin:"0 auto" }}>
         <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:2, color:"#E9DDBB", textShadow:"0 1px 0 #2a2e35", marginBottom:12 }}>游泳成績查詢</h1>
 
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1.4fr auto", gap:8, marginBottom:12 }}>
+        {/* 查詢列：姓名 / 項目 / 年齡誤差 / 查詢 */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr 0.8fr auto", gap:8, marginBottom:12 }}>
           <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
           <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
             {["50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式","100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式","200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"].map(x=>
               <option key={x} value={x}>{x}</option>
             )}
           </select>
+          <input
+            type="number" min={0} max={5} step={1}
+            value={ageTol}
+            onChange={(e)=>setAgeTol(Math.max(0, Math.min(5, Number(e.target.value))))}
+            style={inp}
+            placeholder="年齡誤差(年)"
+            title="年齡誤差：0=同年；1=±1；…"
+          />
           <button onClick={()=>{ setRightShift(0); search(0); }} disabled={loading} style={btn}>查詢</button>
         </div>
 
@@ -355,7 +367,7 @@ export default function Home(){
           <SectionTitle>潛力排行</SectionTitle>
           <div style={{ color:"#AEB4BF", marginBottom:8 }}>
             分母：{rankInfo?.denominator ?? "-"}　你的名次：<span style={{ color:"#FFD166", fontWeight:700 }}>{rankInfo?.rank ?? "-"}</span>　
-            百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}
+            百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
           </div>
 
           <div style={{ width:"100%", height:340 }}>
