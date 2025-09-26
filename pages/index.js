@@ -65,6 +65,7 @@ export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
   const [ageTol, setAgeTol] = useState(1); // 年齡誤差：0=同年、1=±1
+  const [pool] = useState(50); // 先固定長水道，之後可做切換
 
   const [items, setItems] = useState([]);
   const [next, setNext] = useState(null);
@@ -74,8 +75,15 @@ export default function Home(){
   // 自己、對照與排行
   const [trend, setTrend] = useState([]);               // 自己
   const [rankInfo, setRankInfo] = useState(null);
-  const [compareName, setCompareName] = useState("");   // 對照選手
+
+  // 對照（內嵌於「成績趨勢」卡片）
+  const [compareName, setCompareName] = useState("");   // 下拉或輸入後目前使用者
+  const [customCompare, setCustomCompare] = useState(""); // 輸入框值
   const [compareTrend, setCompareTrend] = useState([]); // 對照趨勢
+
+  // 分組排行
+  const [groupsData, setGroupsData] = useState(null);
+  const [rankTab, setRankTab] = useState("top"); // 'top' | 'groups'
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -104,7 +112,7 @@ export default function Home(){
 
   const loadOpponentTrend = async (who, baseStartT) => {
     if (!who) { setCompareTrend([]); return; }
-    const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=0`;
+    const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=0`;
     const r = await fetch(u);
     if (!r.ok) throw new Error("compare summary 失敗");
     const j = await r.json();
@@ -118,17 +126,26 @@ export default function Home(){
     setCompareTrend(baseStartT ? opp.filter(p=>p.t >= baseStartT) : opp);
   };
 
+  const loadGroups = async () => {
+    const u = `${api}/api/groups?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
+    const r = await fetch(u);
+    if (!r.ok) { setGroupsData(null); return; }
+    const j = await r.json();
+    setGroupsData(j || null);
+  };
+
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
 
     if (cursor === 0) {
-      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]);
+      setItems([]); setTrend([]); setRankInfo(null);
+      setCompareTrend([]); setGroupsData(null);
     }
 
     try{
       // 1) summary（自己）
-      const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&limit=500&cursor=${cursor}`;
+      const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
       const r = await fetch(u);
       if(!r.ok) throw new Error("summary 取得失敗");
       const j = await r.json();
@@ -180,6 +197,9 @@ export default function Home(){
         setCompareTrend([]);
       }
 
+      // 3) groups（分組柱狀圖）
+      if (cursor === 0) await loadGroups();
+
     }catch(e){
       setErr(String(e?.message || e));
     }finally{
@@ -202,6 +222,15 @@ export default function Home(){
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareName, stroke]);
+
+  // 切換姓名/項目 → 重新載入分組資料
+  useEffect(()=>{
+    (async ()=>{
+      if (!api) return;
+      try{ await loadGroups(); }catch{ setGroupsData(null); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, stroke]);
 
   // PB點（自己）
   const pbPoint = useMemo(()=>{
@@ -270,7 +299,7 @@ export default function Home(){
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
 
-  // ============ 潛力排行：Bar Chart =============
+  // ============ 潛力排行：Top10（原來那張） ============
   const rankBarData = useMemo(()=>{
     if (!rankInfo) return [];
     const top = (rankInfo.top || []).map((r, idx) => ({
@@ -306,11 +335,38 @@ export default function Home(){
     return [Math.max(0, min - pad), max + pad];
   }, [rankBarData]);
 
+  // ============ 分組排行：轉成 grouped bar 用的資料 ============
+  const groupsChartKeys = useMemo(()=>{
+    const bars = groupsData?.groups?.[0]?.bars || [];
+    return bars.map(b => b.label); // e.g. ["All-Time","2025","2024","2023"]
+  }, [groupsData]);
+  const groupsChartData = useMemo(()=>{
+    if (!groupsData?.groups?.length) return [];
+    // { group:"高中", bars:[{label:"All-Time",seconds:..},{label:"2025",..}...] }
+    return groupsData.groups.map(g => {
+      const row = { group: g.group };
+      (g.bars||[]).forEach(b => { row[b.label] = b.seconds; });
+      return row;
+    });
+  }, [groupsData]);
+
+  // 觸發以自訂輸入為對照
+  const useCustomCompare = async () => {
+    const who = (customCompare || "").trim();
+    if (!who) return;
+    setCompareName(who);
+    try{
+      await loadOpponentTrend(who, trend.length ? trend[0].t : null);
+    }catch{
+      setCompareTrend([]);
+    }
+  };
+
   const simplifyMeet = (s)=>s||"";
 
   return (
     <main style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)", color:"#E9E9EC", padding:"24px 16px 80px" }}>
-      <div style={{ maxWidth:1080, margin:"0 auto" }}>
+      <div style={{ maxWidth:1200, margin:"0 auto" }}>
         <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:2, color:"#E9DDBB", textShadow:"0 1px 0 #2a2e35", marginBottom:12 }}>游泳成績查詢</h1>
 
         {/* 查詢列：姓名 / 項目 / 年齡誤差 / 查詢 */}
@@ -334,13 +390,14 @@ export default function Home(){
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
-        {/* 成績與專項分析 */}
+        {/* 成績與專項分析（含 WA Points） */}
         <Card>
           <SectionTitle>成績分析</SectionTitle>
-          <div style={{ display:"flex", gap:32, marginTop:8 }}>
+          <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
             <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
             <KV label="平均成績" value={fmtTime(analysis?.avg_seconds)}/>
-            <KV label="最佳成績" value={fmtTime(analysis?.pb_seconds)}/>
+            <KV label="最佳成績 (PB)" value={fmtTime(analysis?.pb_seconds)}/>
+            <KV label="WA Points" value={analysis?.wa_points != null ? Math.round(analysis.wa_points) : "-"} />
           </div>
         </Card>
 
@@ -362,65 +419,122 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 潛力排行（Bar Chart） */}
+        {/* 潛力排行：兩個標籤頁 */}
         <Card>
-          <SectionTitle>潛力排行</SectionTitle>
-          <div style={{ color:"#AEB4BF", marginBottom:8 }}>
-            分母：{rankInfo?.denominator ?? "-"}　你的名次：<span style={{ color:"#FFD166", fontWeight:700 }}>{rankInfo?.rank ?? "-"}</span>　
-            百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <SectionTitle>潛力排行</SectionTitle>
+            <div style={{ display:"flex", gap:8 }}>
+              <button
+                onClick={()=>setRankTab("top")}
+                style={{...tabBtn, ...(rankTab==="top"?tabBtnActive:{}), minWidth:96}}
+              >Top10 & 你</button>
+              <button
+                onClick={()=>setRankTab("groups")}
+                style={{...tabBtn, ...(rankTab==="groups"?tabBtnActive:{}), minWidth:96}}
+              >分組排行</button>
+            </div>
           </div>
 
-          <div style={{ width:"100%", height:340 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={rankBarData}
-                margin={{ top:10, right:10, bottom:6, left:10 }}
-                isAnimationActive={false}
-              >
-                <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill:"#AEB4BF", fontSize:12 }}
-                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                />
-                <YAxis
-                  domain={barDomain}
-                  tickFormatter={(v)=>v.toFixed(2)}
-                  tick={{ fill:"#AEB4BF", fontSize:12 }}
-                  axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                  width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
-                />
-                <Tooltip
-                  contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
-                  formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
-                  labelFormatter={(l)=>String(l)}
-                />
-                <Bar dataKey="seconds" radius={[6,6,0,0]} isAnimationActive={false}>
-                  <LabelList
-                    dataKey="name"
-                    position="top"
-                    style={{ fill:"#EDEBE3", fontSize:12, fontWeight:700, textShadow:"0 1px 0 rgba(0,0,0,.6)" }}
-                    formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
+          {/* 補充統計 */}
+          {rankTab==="top" && (
+            <div style={{ color:"#BFC6D4", marginBottom:8 }}>
+              分母：{rankInfo?.denominator ?? "-"}　你的名次：
+              <span style={{ color:"#FFD166", fontWeight:800 }}>{rankInfo?.rank ?? "-"}</span>　
+              百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
+            </div>
+          )}
+
+          {/* Top10 Bar */}
+          {rankTab==="top" && (
+            <div style={{ width:"100%", height:340 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rankBarData} margin={{ top:10, right:10, bottom:6, left:10 }} isAnimationActive={false}>
+                  <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
+                  <XAxis dataKey="label" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
+                  <YAxis
+                    domain={barDomain}
+                    tickFormatter={(v)=>v.toFixed(2)}
+                    tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
+                    axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                    width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+                  <Tooltip
+                    contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
+                    formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
+                    labelFormatter={(l)=>String(l)}
+                  />
+                  <Bar dataKey="seconds" radius={[6,6,0,0]} isAnimationActive={false} fill="#7aa2ff">
+                    <LabelList
+                      dataKey="name"
+                      position="top"
+                      style={{ fill:"#fff", fontSize:12, fontWeight:800, textShadow:"0 1px 0 rgba(0,0,0,.7)" }}
+                      formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 分組排行（Group Bar：All-Time + 近三年） */}
+          {rankTab==="groups" && (
+            <div style={{ width:"100%", height:380 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={groupsChartData} margin={{ top:10, right:10, bottom:16, left:10 }} isAnimationActive={false}>
+                  <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
+                  <XAxis dataKey="group" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
+                  <YAxis
+                    tickFormatter={(v)=>v.toFixed(2)}
+                    tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
+                    axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
+                    width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
+                  />
+                  <Tooltip
+                    contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
+                    formatter={(v, k)=>[fmtTime(v), k]}
+                    labelFormatter={(l)=>`組別：${l}`}
+                  />
+                  {/* 依序畫出各年度/All-Time 的柱 */}
+                  {groupsChartKeys.map((k, idx)=>(
+                    <Bar key={k} dataKey={k} name={k} radius={[6,6,0,0]} isAnimationActive={false} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
+                * 同輸入選手性別；排除冬季短水道。每組顯示：All-Time 及近三年各年最快。
+              </div>
+            </div>
+          )}
         </Card>
 
-        {/* 對照選手選單 */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:8, margin:"12px 0" }}>
-          <select value={compareName} onChange={(e)=>setCompareName(e.target.value)} style={inp}>
-            <option value="">（選擇對照選手：來自對手排行 Top10）</option>
-            {(rankInfo?.top||[]).map((r)=>(
-              <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* 成績趨勢（我的、對照、與差） */}
+        {/* 成績趨勢（我的、對照、與差）——把對照控制移入本卡片 */}
         <Card>
-          <SectionTitle>成績趨勢</SectionTitle>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+            <SectionTitle>成績趨勢</SectionTitle>
+
+            {/* 右側功能：選擇對照選手（Top10）＋ 任意輸入 */}
+            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+              <select
+                value={compareName}
+                onChange={(e)=>setCompareName(e.target.value)}
+                style={{ ...inp, padding:"8px 10px" }}
+                title="由對手排行 Top10 快速選擇對照選手"
+              >
+                <option value="">（不顯示對照）</option>
+                {(rankInfo?.top||[]).map((r)=>(
+                  <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
+                ))}
+              </select>
+              <input
+                value={customCompare}
+                onChange={(e)=>setCustomCompare(e.target.value)}
+                placeholder="輸入任一選手做對照"
+                style={{ ...inp, padding:"8px 10px", minWidth:220 }}
+              />
+              <button onClick={async ()=>{ await useCustomCompare(); }} style={{ ...btn, padding:"8px 12px" }}>顯示</button>
+            </div>
+          </div>
+
           <div
             ref={chartBoxRef}
             style={{ height: 420, marginTop: 8, position:"relative" }}
@@ -448,6 +562,7 @@ export default function Home(){
                   verticalAlign="top"
                   height={28}
                   formatter={(value)=>legendMap[value] ?? value}
+                  wrapperStyle={{ color:"#F6F7FB", fontWeight:700 }}
                 />
 
                 <XAxis
@@ -456,32 +571,32 @@ export default function Home(){
                   scale="time"
                   domain={["auto","auto"]}
                   tickFormatter={(t)=>tToLabel(t)}
-                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                 />
                 <YAxis
                   yAxisId="left"
                   tickFormatter={(v)=>v.toFixed(2)}
                   domain={["auto","auto"]}
-                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                  width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#AEB4BF" }}
+                  width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   domain={rightDomain}
                   tickFormatter={(v)=>v.toFixed(2)}
-                  tick={{ fill:"#AEB4BF", fontSize:12 }}
+                  tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                  width={56} label={{ value:"差(秒)", angle:90, position:"insideRight", fill:"#AEB4BF" }}
+                  width={56} label={{ value:"差(秒)", angle:90, position:"insideRight", fill:"#d9dde7" }}
                 />
 
                 <Tooltip
-                  contentStyle={{ background:"#15181e", border:"1px solid #2e333b", color:"#E9E9EC" }}
+                  contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
                   formatter={(v, k)=> {
                     if (k === "my")  return [fmtTime(v), name];
-                    if (k === "opp") return [fmtTime(v), compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照"];
+                    if (k === "opp") return [fmtTime(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
                     if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
                     return [v, k];
                   }}
@@ -495,7 +610,7 @@ export default function Home(){
                   dataKey="opp"
                   name="opp"
                   stroke="#35D07F"
-                  strokeWidth={2}
+                  strokeWidth={2.2}
                   connectNulls
                   dot={<TriDot />}
                   activeDot={<TriDot />}
@@ -508,7 +623,7 @@ export default function Home(){
                   dataKey="my"
                   name="my"
                   stroke="#80A7FF"
-                  strokeWidth={2}
+                  strokeWidth={2.2}
                   dot={{ r:3, stroke:"#0a0c10", strokeWidth:1, fill:"#ffffff" }}
                   activeDot={{ r:6 }}
                   connectNulls
@@ -598,12 +713,12 @@ const MiniCard = ({ children }) => (
   }}>{children}</div>
 );
 const SectionTitle = ({ children }) => (
-  <div style={{ fontWeight:700, letterSpacing:.5, color:"#D8D6CB", marginBottom:6 }}>{children}</div>
+  <div style={{ fontWeight:800, letterSpacing:.5, color:"#EDEBE3", marginBottom:6, textShadow:"0 1px 0 rgba(0,0,0,.6)" }}>{children}</div>
 );
 const KV = ({ label, value, small }) => (
   <div style={{ marginRight:24 }}>
     <div style={{ fontSize: small ? 12 : 13, color:"#AEB4BF" }}>{label}</div>
-    <div style={{ fontSize: small ? 16 : 20, fontWeight:700, color:"#EDEBE3", textShadow:"0 1px 0 rgba(0,0,0,.6)" }}>
+    <div style={{ fontSize: small ? 16 : 20, fontWeight:800, color:"#FFFFFF", textShadow:"0 1px 0 rgba(0,0,0,.8)" }}>
       {value ?? "-"}
     </div>
   </div>
@@ -622,11 +737,26 @@ const btn = {
   background:"linear-gradient(180deg, #2a60ff, #234ad3) padding-box, linear-gradient(180deg, #5b7cff, #1a2a6e) border-box",
   border:"1px solid transparent",
   color:"#fff",
-  fontWeight:700,
+  fontWeight:800,
   padding:"10px 16px",
   borderRadius:10,
   boxShadow:"0 6px 14px rgba(50,90,255,.35)",
   cursor:"pointer"
+};
+const tabBtn = {
+  background:"linear-gradient(180deg, #1a1e25, #12151a)",
+  border:"1px solid #313744",
+  color:"#d9dde7",
+  fontWeight:800,
+  padding:"6px 12px",
+  borderRadius:10,
+  cursor:"pointer"
+};
+const tabBtnActive = {
+  background:"linear-gradient(180deg, #2a60ff, #234ad3)",
+  border:"1px solid #4163ff",
+  color:"#fff",
+  boxShadow:"0 6px 14px rgba(50,90,255,.35)"
 };
 const table = {
   width:"100%",
@@ -640,11 +770,11 @@ const table = {
 };
 const th = {
   textAlign:"left",
-  fontWeight:700,
-  color:"#C8CDD7",
+  fontWeight:800,
+  color:"#F0F3FA",
   padding:"10px 12px",
   borderBottom:"1px solid #2c3037",
-  background:"rgba(255,255,255,.02)"
+  background:"rgba(255,255,255,.03)"
 };
 const td = {
   color:"#E9E9EC",
