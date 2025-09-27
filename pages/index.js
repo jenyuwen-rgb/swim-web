@@ -449,44 +449,44 @@ export default function Home(){
   };
 
   /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
-  const renderStrongLabel = (dataKey) => (props) => {
-    const { x, y, width, value, index, data } = props;
-    if (value == null) return null;
-    const row = data[index] || {};
-    const meta = row[`meta_${dataKey}`] || {};
-    const who = meta.name || "";
-    if (!who) return null;
+// 取代 452–488 行
+const renderStrongLabel = (dataKey) => (props) => {
+  const { value, payload, viewBox } = props; // ✅ LabelList 提供的是 payload / viewBox
+  if (value == null || !payload || !viewBox) return null;
 
-    const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
-    if (!isStrong) return null;
+  const meta = payload[`meta_${dataKey}`] || {};
+  const who = meta.name || "";
+  if (!who) return null;
 
-    const cx = x + width / 2;
-    const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
-    const sub = `${fmtTime(value)}｜${meta.year || "—"}`;
+  const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
+  if (!isStrong) return null;
 
-    return (
-      <g pointerEvents="none">
-        <text
-          x={cx}
-          y={y - 16}
-          textAnchor="middle"
-          style={{ fontWeight: 800, fill: color, paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
-        >
-          {who}
-        </text>
-        <text
-          x={cx}
-          y={y - 2}
-          textAnchor="middle"
-          style={{ fontWeight: 700, fill: "#FFFFFF", paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
-        >
-          {sub}
-        </text>
-      </g>
-    );
-  };
+  const cx = viewBox.x + (viewBox.width || 0) / 2; // 柱中心
+  const topY = viewBox.y;                           // 柱頂 Y
+  const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+  const sub = `${fmtTime(value)}｜${meta.year || "—"}`;
 
-  /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
+  return (
+    <g pointerEvents="none">
+      <text
+        x={cx}
+        y={topY - 16}
+        textAnchor="middle"
+        style={{ fontWeight: 800, fill: color, paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
+      >
+        {who}
+      </text>
+      <text
+        x={cx}
+        y={topY - 2}
+        textAnchor="middle"
+        style={{ fontWeight: 700, fill: "#FFFFFF", paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
+      >
+        {sub}
+      </text>
+    </g>
+  );
+};  /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
   const GroupsTooltip = (props) => {
     const { active, label, payload } = props;
     if (!active || !payload || !payload.length) return null;
