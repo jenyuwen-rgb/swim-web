@@ -1,4 +1,3 @@
-// pages/index.js
 import { useMemo, useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -65,14 +64,13 @@ const DiamondDot = (props) => {
 const GROUP_BAR_COLORS = {
   "All-Time": "#7AA2FF",
   "你": "#FF6B6B",
-  // 年份色（會 fallback 到一組循環色）
 };
 const YEAR_COLORS = ["#66E3FF", "#A7F0BA", "#FFD166", "#C7B1FF", "#FFA8E2"];
 
 export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
-  const [ageTol, setAgeTol] = useState(0); // 預設 0（移到 Top10 卡片內）
+  const [ageTol, setAgeTol] = useState(0); // 移到 Top10 卡片，預設 0
   const [pool] = useState(50);
 
   const [items, setItems] = useState([]);
@@ -199,9 +197,9 @@ export default function Home(){
       // 2) rank（Top10；預設對照＝top1）
       await refreshRankOnly();
       if (cursor === 0) {
-        const defaultOpp = (rankInfo?.top?.[0]?.name) || "";
-        const willUse = compareName || defaultOpp;
-        if (!compareName && defaultOpp) setCompareName(defaultOpp);
+        const defOpp = (rankInfo?.top?.[0]?.name) || "";
+        const willUse = compareName || defOpp;
+        if (!compareName && defOpp) setCompareName(defOpp);
         if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
       }
 
@@ -344,16 +342,14 @@ export default function Home(){
   }, [rankBarData]);
 
   // ============ 分組排行（新版） ============
-  // 取所有出現過的 label keys（含 "你"）
   const groupsChartKeys = useMemo(()=>{
     const set = new Set();
     (groupsData?.groups || []).forEach(g=>{
       (g.bars||[]).forEach(b => set.add(b.label));
     });
-    return Array.from(set); // 例如 ["All-Time","2025","2024","2023","你"]
+    return Array.from(set); // e.g. ["All-Time","2025","2024","2023","你"]
   }, [groupsData]);
 
-  // 將每組轉成一列：各 label 放秒數，並附 meta_label
   const groupsChartData = useMemo(()=>{
     if (!groupsData?.groups?.length) return [];
     return groupsData.groups.map(g => {
@@ -366,13 +362,9 @@ export default function Home(){
     });
   }, [groupsData]);
 
-  // 依 label 取得顏色
   const colorOfKey = (k, idx) => {
     if (GROUP_BAR_COLORS[k]) return GROUP_BAR_COLORS[k];
-    if (/^\d{4}$/.test(k)) {
-      // 年份
-      return YEAR_COLORS[idx % YEAR_COLORS.length];
-    }
+    if (/^\d{4}$/.test(k)) return YEAR_COLORS[idx % YEAR_COLORS.length];
     return YEAR_COLORS[idx % YEAR_COLORS.length];
   };
 
