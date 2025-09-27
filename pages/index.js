@@ -615,7 +615,7 @@ export default function Home(){
           <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
             <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
             
-            KV label="平均成績" value={fmtTimeMMSS(analysis?.avg_seconds)}/>
+            <KV label="平均成績" value={fmtTimeMMSS(analysis?.avg_seconds)}/>
 <KV label="最佳成績 (PB)" value={fmtTimeMMSS(analysis?.pb_seconds)}/>
             <KV label="WA Points" value={analysis?.wa_points != null ? Math.round(analysis.wa_points) : "-"} />
           </div>
