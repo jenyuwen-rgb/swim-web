@@ -674,7 +674,7 @@ const renderStrongLabel = (dataKey) => (props) => {
                       ))}
                       {/* NEW: 強勢選手/你 → 顯示 姓名｜成績｜年份 */}
                     
-                      <LabelList dataKey={k} content={renderStrongLabel(k)} />
+                      <LabelList content={renderStrongLabel(k)} />
                     </Bar>
                   ))}
                 </BarChart>
