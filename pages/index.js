@@ -327,7 +327,7 @@ export default function Home(){
   }
 }
   // 初次載入
-  useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
+  //useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
   // ageTol/name/stroke 變更時自動更新 Top10
   useEffect(() => {
