@@ -566,7 +566,7 @@ export default function Home(){
             const who = meta.name || "—";
             const when = meta.year || "—";
             const meet = meta.meet || "—";
-            const val = it.value != null ? fmtTime(it.value) : "—";
+            const val = it.value != null ? fmtTimeMMSS(it.value) : "—";
             return (
               <div key={key} style={{...tooltipStyles.itemStyle, display:"flex", alignItems:"center"}}>
                 <span style={{
@@ -614,8 +614,9 @@ export default function Home(){
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
             <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
-            <KV label="平均成績" value={fmtTime(analysis?.avg_seconds)}/>
-            <KV label="最佳成績 (PB)" value={fmtTime(analysis?.pb_seconds)}/>
+            
+            KV label="平均成績" value={fmtTimeMMSS(analysis?.avg_seconds)}/>
+<KV label="最佳成績 (PB)" value={fmtTimeMMSS(analysis?.pb_seconds)}/>
             <KV label="WA Points" value={analysis?.wa_points != null ? Math.round(analysis.wa_points) : "-"} />
           </div>
         </Card>
@@ -685,7 +686,7 @@ export default function Home(){
                   <XAxis dataKey="label" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                   <YAxis
                     domain={barDomain}
-                    tickFormatter={(v)=>v.toFixed(2)}
+                    tickFormatter={fmtTimeMMSS} 
                     tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                     axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                     width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
@@ -696,7 +697,7 @@ export default function Home(){
                     formatter={(v, _k, p) => {
                       const row = p?.payload || {};
                       const right = `${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"}`;
-                      return [fmtTime(v), right];
+                      return [fmtTimeMMSS(v), right]; 
                     }}
                     labelFormatter={(l, payload) => {
                       const row = payload && payload[0] && payload[0].payload;
@@ -726,7 +727,7 @@ export default function Home(){
                   <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                   <XAxis dataKey="group" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                   <YAxis
-                    tickFormatter={(v)=>v.toFixed(2)}
+                    tickFormatter={fmtTimeMMSS} 
                     tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                     axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                     width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
@@ -849,8 +850,10 @@ export default function Home(){
                 <Tooltip
                   {...tooltipStyles}
                   formatter={(v, k)=> {
-                    if (k === "my")  return [fmtTime(v), name];
-                    if (k === "opp") return [fmtTime(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
+                    
+                    
+                    if (k === "my")  return [fmtTimeMMSS(v), name];
+                    if (k === "opp") return [fmtTimeMMSS(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
                     if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
                     return [v, k];
                   }}
