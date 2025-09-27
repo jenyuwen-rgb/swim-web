@@ -20,6 +20,13 @@ const tooltipStyles = {
 };
 
 /* ---------- helpers ---------- */
+const fmtTimeMMSS = (s) => {
+  const v = Number(s);
+  if (!Number.isFinite(v)) return "-";
+  const m = Math.floor(v / 60);
+  const sec = v - m * 60;
+  return `${String(m).padStart(2, "0")}:${sec.toFixed(2).padStart(5, "0")}`;
+};
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
   const sec = Number(s);
@@ -200,9 +207,11 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
-    aconst = (rightBase.span || 10) / Math.max(rect.height, 1); // secPerPx
+    
+    const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     const px = e.clientY - draggingRef.current.startY;
-    setRightShift(draggingRef.current.startShift + px * aconst);
+  
+    setRightShift(draggingRef.current.startShift + px * secPerPx);
   };
   const onPointerUp = () => { draggingRef.current.active = false; };
 
@@ -821,11 +830,11 @@ export default function Home(){
                 />
                 <YAxis
                   yAxisId="left"
-                  tickFormatter={(v)=>v.toFixed(2)}
+                                    tickFormatter={fmtTimeMMSS}
                   domain={["auto","auto"]}
                   tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                  width={64} label={{ value:"秒數", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
+                  width={64} label={{ value:"時間", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                 />
                 <YAxis
                   yAxisId="right"
