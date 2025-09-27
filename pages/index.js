@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LabelList, Cell
 } from "recharts";
 
-/* ---------- Tooltip 樣式（提高可讀性） ---------- */
+/* ---------- tooltip 樣式（共用） ---------- */
 const tooltipStyles = {
   contentStyle: {
     background: "rgba(14,16,20,0.98)",
@@ -41,7 +41,7 @@ const tToLabel = (t) => {
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
-// 冬季短水道（前端版，與後端一致）
+/* 冬季短水道（前端版，與後端一致） */
 const isWinterShortCourse = (meet) => {
   if (!meet) return false;
   const s = String(meet);
@@ -76,8 +76,23 @@ const DiamondDot = (props) => {
 
 /* ---------- 顏色（分組柱狀圖） ---------- */
 const GREYS = ["#C9CED6", "#B6BCC7", "#A5ADBA", "#959EAD", "#8792A1"];
-const SELF_BLUE = "#80A7FF";   // 你
-const MULTI_GREEN = "#35D07F"; // 同人跨柱(≧2)
+const SELF_BLUE = "#80A7FF";                 // 你
+// 強勢選手專屬色盤（避開 SELF_BLUE）
+const MULTI_PALETTE = [
+  "#35D07F", "#FF7A59", "#F6BD60", "#7AD3F7",
+  "#C17DFF", "#FFA8D6", "#66C561", "#FFB55E",
+  "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
+];
+
+// 穩定雜湊（FNV-1a 簡化）
+const hashStr = (s) => {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+};
 
 /* ================================= */
 export default function Home(){
@@ -123,8 +138,6 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
-    the:
-    0
     const px = e.clientY - draggingRef.current.startY;
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
@@ -303,7 +316,7 @@ export default function Home(){
 
     const leftSpan = Math.max(lmax - lmin, 1);
     const gapTop = Math.max(leftSpan * 0.06, 0.6);
-    const pushDown = Math.max(leftSpan * 0.35, 1.5);
+    the const pushDown = Math.max(leftSpan * 0.35, 1.5);
     const rMax = lmin - gapTop - pushDown;
     const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4);
     const rMin = rMax - diffSpan;
@@ -403,17 +416,67 @@ export default function Home(){
     return cnt; // Map<name, times>
   }, [groupsData]);
 
-  // 灰色挑選：依「列索引＋欄索引」簡單輪替，避免整張圖同色
+  // 為所有「強勢選手(≥2)」建立專屬色
+  const strongColorMap = useMemo(()=>{
+    const m = new Map();
+    for (const [who, times] of (winnersGlobalCount || new Map()).entries()) {
+      if (who && who !== name && times >= 2) {
+        const idx = hashStr(who) % MULTI_PALETTE.length;
+        m.set(who, MULTI_PALETTE[idx]);
+      }
+    }
+    return m; // Map<name, color>
+  }, [winnersGlobalCount, name]);
+
+  // 灰色挑選：依「列索引＋欄索引」輪替
   const pickGrey = (rowIdx, barIdx) => GREYS[(rowIdx + barIdx) % GREYS.length];
 
-  // 決定每一格 Cell 顏色：你(藍) > 多柱同人(綠) > 灰
-  const getBarFill = (row, key, rowIdx, barIdx) => {
+  // 取得 cell 顏色：你(藍) > 強勢選手(專屬色) > 灰
+  const getBarColor = (row, key, rowIdx, barIdx) => {
     const meta = row?.[`meta_${key}`] || {};
     const who = meta?.name || "";
     if (!who) return pickGrey(rowIdx, barIdx);
     if (who === name) return SELF_BLUE;
-    if ((winnersGlobalCount.get(who) || 0) >= 2) return MULTI_GREEN;
+    if ((winnersGlobalCount.get(who) || 0) >= 2) return strongColorMap.get(who) || pickGrey(rowIdx, barIdx);
     return pickGrey(rowIdx, barIdx);
+  };
+
+  /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
+  const GroupsTooltip = (props) => {
+    const { active, label, payload } = props;
+    if (!active || !payload || !payload.length) return null;
+    // 取得 row index 用於灰階算法
+    const row = payload[0]?.payload || {};
+    const rowIdx = groupsChartData.findIndex(r => r.group === row.group);
+
+    return (
+      <div style={tooltipStyles.contentStyle}>
+        <div style={{...tooltipStyles.labelStyle, marginBottom:6}}>組別：{label}</div>
+        <div style={{ display:"grid", gap:4 }}>
+          {payload.map((it) => {
+            const key = it.dataKey;
+            const barIdx = groupsChartKeys.indexOf(key);
+            const meta = it?.payload?.[`meta_${key}`] || {};
+            const color = getBarColor(it.payload, key, rowIdx, barIdx);
+            const who = meta.name || "—";
+            const when = meta.year || "—";
+            const meet = meta.meet || "—";
+            const val = it.value != null ? fmtTime(it.value) : "—";
+            return (
+              <div key={key} style={{...tooltipStyles.itemStyle, display:"flex", alignItems:"center"}}>
+                <span style={{
+                  width:10, height:10, borderRadius:999, background:color,
+                  display:"inline-block", marginRight:8, flex:"0 0 auto"
+                }}/>
+                <span style={{fontWeight:800, marginRight:8}}>{key}</span>
+                <span style={{opacity:.9}}>{val}（{who}）</span>
+                <span style={{opacity:.7, marginLeft:8}}>｜{when}｜{meet}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   /* ================== UI ================== */
@@ -524,7 +587,7 @@ export default function Home(){
                   />
                   <Tooltip
                     {...tooltipStyles}
-                    cursor={false}                                    /* ← 關閉白色高亮底 */
+                    cursor={false}                           // 關閉白色背景高亮
                     formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
                     labelFormatter={(l)=>String(l)}
                   />
@@ -555,14 +618,8 @@ export default function Home(){
                     width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
                   <Tooltip
-                    {...tooltipStyles}
-                    cursor={false}                                    /* ← 關閉白色高亮底 */
-                    formatter={(v, key, payload) => {
-                      if (v == null) return ["—", key];
-                      const meta = payload?.payload?.[`meta_${key}`] || {};
-                      return [`${fmtTime(v)}（${meta.name||"—"}）`, `${key}｜${meta.year||"—"}｜${meta.meet||"—"}`];
-                    }}
-                    labelFormatter={(l)=>`組別：${l}`}
+                    cursor={false}                             // 關閉白色背景高亮
+                    content={<GroupsTooltip />}                // 自訂內容（同色顯示）
                   />
                   {groupsChartKeys.map((k, barIdx)=>(
                     <Bar
@@ -574,7 +631,7 @@ export default function Home(){
                     >
                       {groupsChartData.map((row, rowIdx)=>(
                         <Cell key={`${k}-${row.group}`}
-                          fill={getBarFill(row, k, rowIdx, barIdx)}
+                          fill={getBarColor(row, k, rowIdx, barIdx)}
                         />
                       ))}
                     </Bar>
@@ -582,7 +639,7 @@ export default function Home(){
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
-                * 同輸入選手性別；排除冬季短水道。顏色：你=藍、同人跨柱(≧2)=綠、其餘=灰。
+                * 同輸入選手性別；排除冬季短水道。顏色：你=藍；跨組強勢選手(≥2)＝各自專屬色；其餘＝灰階。
               </div>
             </div>
           )}
