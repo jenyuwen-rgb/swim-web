@@ -449,43 +449,32 @@ export default function Home(){
   };
 
   /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
-// 取代 452–488 行
+/* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 const renderStrongLabel = (dataKey) => (props) => {
-  const { value, payload, viewBox } = props; // ✅ LabelList 提供的是 payload / viewBox
+  const { value, payload, viewBox } = props;         // ✅ 用 payload / viewBox
   if (value == null || !payload || !viewBox) return null;
-
   const meta = payload[`meta_${dataKey}`] || {};
   const who = meta.name || "";
   if (!who) return null;
-
   const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
   if (!isStrong) return null;
-
-  const cx = viewBox.x + (viewBox.width || 0) / 2; // 柱中心
-  const topY = viewBox.y;                           // 柱頂 Y
+  const cx = viewBox.x + (viewBox.width || 0) / 2;   // 柱中心
+  const topY = viewBox.y;                             // 柱頂 Y
   const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
   const sub = `${fmtTime(value)}｜${meta.year || "—"}`;
-
   return (
     <g pointerEvents="none">
-      <text
-        x={cx}
-        y={topY - 16}
-        textAnchor="middle"
-        style={{ fontWeight: 800, fill: color, paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
-      >
+      <text x={cx} y={topY - 16} textAnchor="middle"
+            style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
         {who}
       </text>
-      <text
-        x={cx}
-        y={topY - 2}
-        textAnchor="middle"
-        style={{ fontWeight: 700, fill: "#FFFFFF", paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
-      >
+      <text x={cx} y={topY - 2} textAnchor="middle"
+            style={{ fontWeight:700, fill:"#FFFFFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
         {sub}
       </text>
     </g>
   );
+};
 };  /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
   const GroupsTooltip = (props) => {
     const { active, label, payload } = props;
@@ -662,7 +651,7 @@ const renderStrongLabel = (dataKey) => (props) => {
           {rankTab==="groups" && (
             <div style={{ width:"100%", height:400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={groupsChartData} margin={{ top:10, right:10, bottom:16, left:10 }} isAnimationActive={false}>
+                <BarChart data={groupsChartData} margin={{ top:28, right:10, bottom:16, left:10 }} isAnimationActive={false}>
                   <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                   <XAxis dataKey="group" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                   <YAxis
@@ -684,7 +673,8 @@ const renderStrongLabel = (dataKey) => (props) => {
                         <Cell key={`${k}-${row.group}`} fill={getBarColor(row, k, rowIdx, barIdx)} />
                       ))}
                       {/* NEW: 強勢選手/你 → 顯示 姓名｜成績｜年份 */}
-                      <LabelList content={renderStrongLabel(k)} />
+                    
+                      <LabelList dataKey={k} content={renderStrongLabel(k)} />
                     </Bar>
                   ))}
                 </BarChart>
