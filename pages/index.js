@@ -316,7 +316,7 @@ export default function Home(){
 
     const leftSpan = Math.max(lmax - lmin, 1);
     const gapTop = Math.max(leftSpan * 0.06, 0.6);
-    the const pushDown = Math.max(leftSpan * 0.35, 1.5);
+    const pushDown = Math.max(leftSpan * 0.35, 1.5);
     const rMax = lmin - gapTop - pushDown;
     const diffSpan = Math.max(dmax - dmin, leftSpan * 0.4);
     const rMin = rMax - diffSpan;
