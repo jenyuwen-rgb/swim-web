@@ -700,7 +700,7 @@ export default function Home(){
                     tickFormatter={fmtTimeMMSS} 
                     tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                     axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                    width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
+                    width={64} label={{ value:"時間(PB)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
                   <Tooltip
                     {...tooltipStyles}
@@ -741,7 +741,7 @@ export default function Home(){
                     tickFormatter={fmtTimeMMSS} 
                     tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                     axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
-                    width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
+                    width={64} label={{ value:"最快時間 mm:ss", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
                   <Tooltip cursor={false} content={<GroupsTooltip />} />
                   {groupsChartKeys.map((k, barIdx)=>(
