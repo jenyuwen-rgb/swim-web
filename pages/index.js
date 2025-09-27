@@ -450,22 +450,22 @@ export default function Home(){
 
   /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
+// ✅ 用 x / y / width + payload，不要用 viewBox
 const renderStrongLabel = (dataKey) => (props) => {
-  const { viewBox, payload } = props;
-  if (!payload || !viewBox) return null;
+  const { x, y, width, payload } = props;
+  if (x == null || y == null || width == null || !payload) return null;
 
-  // 這裡 payload 就是一整列的 row
   const meta = payload[`meta_${dataKey}`] || {};
   const who = meta.name || "";
-  const sec = meta.seconds;
+  const sec = Number(meta.seconds);
   if (!who || !Number.isFinite(sec)) return null;
 
-  const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
+  const isStrong = who === name || (winnersGlobalCount.get(who) || 0) >= 2;
   if (!isStrong) return null;
 
-  const cx = viewBox.x + (viewBox.width || 0) / 2;
-  const topY = viewBox.y;
-  const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+  const cx = x + width / 2;      // 柱中心
+  const topY = y;                // 柱頂 Y
+  const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
   const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
 
   return (
@@ -475,7 +475,7 @@ const renderStrongLabel = (dataKey) => (props) => {
         {who}
       </text>
       <text x={cx} y={topY - 2} textAnchor="middle"
-            style={{ fontWeight:700, fill:"#FFFFFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+            style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
         {sub}
       </text>
     </g>
