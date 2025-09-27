@@ -85,12 +85,6 @@ const MULTI_PALETTE = [
   "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
 ];
 
-// Top10 用：高辨識度色盤（避開 SELF_BLUE）
-const TOP_PALETTE = [
-  "#FF7A59", "#F6BD60", "#22D3EE", "#A3E635", "#C17DFF",
-  "#F472B6", "#7AD3F7", "#F59E0B", "#66C561", "#9EC1FF"
-];
-
 /* ================================= */
 export default function Home(){
   const [name, setName] = useState("温心妤");
@@ -135,8 +129,6 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
-    the // (no-op to keep pointermove passive) 
-    0;
     const px = e.clientY - draggingRef.current.startY;
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
@@ -250,7 +242,7 @@ export default function Home(){
   useEffect(() => {
     if (!api) return;
     (async () => { await refreshRankOnly(); })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageTol, name, stroke]);
 
   // 切換對照選手或泳姿 → 重抓對照趨勢
@@ -263,7 +255,7 @@ export default function Home(){
         setCompareTrend([]);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareName, stroke]);
 
   // 切換姓名/項目 → 重新載入分組資料
@@ -272,7 +264,7 @@ export default function Home(){
       if (!api) return;
       try{ await loadGroups(); }catch{ setGroupsData(null); }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, stroke]);
 
   // PB點（自己）
@@ -356,7 +348,8 @@ export default function Home(){
         year: r.year || r.pb_year || r.ymd || r.pb_yyyymmdd || "",
         meet: r.meet || r.pb_meet || r.meet_name || r.event || "",
         isYou,
-        color: isYou ? SELF_BLUE : TOP_PALETTE[idx % TOP_PALETTE.length]
+        // 只有你是藍色，其餘一率灰階
+        color: isYou ? SELF_BLUE : GREYS[idx % GREYS.length]
       };
     });
 
@@ -434,7 +427,7 @@ export default function Home(){
     (winnersGlobalCount || new Map()).forEach((times, who) => {
       if (who && who !== name && times >= 2) list.push(who);
     });
-    list.sort(); // 穩定順序
+    list.sort();
     list.forEach((who, i) => m.set(who, MULTI_PALETTE[i % MULTI_PALETTE.length]));
     return m; // Map<name, color>
   }, [winnersGlobalCount, name]);
