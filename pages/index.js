@@ -85,6 +85,9 @@ const MULTI_PALETTE = [
   "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
 ];
 
+// Top10 若要彩色可換這組
+// const TOP_PALETTE = ["#FF7A59","#F6BD60","#22D3EE","#A3E635","#C17DFF","#F472B6","#7AD3F7","#F59E0B","#66C561","#9EC1FF"];
+
 /* ================================= */
 export default function Home(){
   const [name, setName] = useState("温心妤");
@@ -445,11 +448,48 @@ export default function Home(){
     return pickGrey(rowIdx, barIdx);
   };
 
+  /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
+  const renderStrongLabel = (dataKey) => (props) => {
+    const { x, y, width, value, index, data } = props;
+    if (value == null) return null;
+    const row = data[index] || {};
+    const meta = row[`meta_${dataKey}`] || {};
+    const who = meta.name || "";
+    if (!who) return null;
+
+    const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
+    if (!isStrong) return null;
+
+    const cx = x + width / 2;
+    const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+    const sub = `${fmtTime(value)}｜${meta.year || "—"}`;
+
+    return (
+      <g pointerEvents="none">
+        <text
+          x={cx}
+          y={y - 16}
+          textAnchor="middle"
+          style={{ fontWeight: 800, fill: color, paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
+        >
+          {who}
+        </text>
+        <text
+          x={cx}
+          y={y - 2}
+          textAnchor="middle"
+          style={{ fontWeight: 700, fill: "#FFFFFF", paintOrder: "stroke", stroke: "#0a0c10", strokeWidth: 2 }}
+        >
+          {sub}
+        </text>
+      </g>
+    );
+  };
+
   /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
   const GroupsTooltip = (props) => {
     const { active, label, payload } = props;
     if (!active || !payload || !payload.length) return null;
-    // 取得 row index 用於灰階算法
     const row = payload[0]?.payload || {};
     const rowIdx = groupsChartData.findIndex(r => r.group === row.group);
 
@@ -643,12 +683,14 @@ export default function Home(){
                       {groupsChartData.map((row, rowIdx)=>(
                         <Cell key={`${k}-${row.group}`} fill={getBarColor(row, k, rowIdx, barIdx)} />
                       ))}
+                      {/* NEW: 強勢選手/你 → 顯示 姓名｜成績｜年份 */}
+                      <LabelList content={renderStrongLabel(k)} />
                     </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
-                * 同輸入選手性別；排除冬季短水道。顏色：你=藍；跨組強勢選手(≥2)=各自專屬色（保證不同色）；其餘=灰階。
+                *  Bar chart 依序為歷年最快 / 今年最快 / 去年最快 / 前年最快；強勢選手(跨組≥2)與你會在柱上顯示「姓名｜成績｜年份」。
               </div>
             </div>
           )}
