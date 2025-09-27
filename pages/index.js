@@ -1,8 +1,9 @@
+// pages/index.js
 import { useMemo, useState, useEffect, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceDot, Legend,
-  BarChart, Bar, LabelList
+  BarChart, Bar, LabelList, Cell
 } from "recharts";
 
 /* ---------- helpers ---------- */
@@ -34,7 +35,7 @@ const isWinterShortCourse = (meet) => {
   return s.includes("冬季短水道") || (s.includes("短水道") && s.includes("冬"));
 };
 
-/* ---------- 自訂點樣式（含安全檢查） ---------- */
+/* ---------- 線圖自訂點 ---------- */
 const TriDot = (props) => {
   const v = props?.payload?.opp;
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
@@ -60,17 +61,16 @@ const DiamondDot = (props) => {
   );
 };
 
-/* ---------- 顏色方案（分組圖） ---------- */
-const GROUP_BAR_COLORS = {
-  "All-Time": "#7AA2FF",
-  "你": "#FF6B6B",
-};
-const YEAR_COLORS = ["#66E3FF", "#A7F0BA", "#FFD166", "#C7B1FF", "#FFA8E2"];
+/* ---------- 顏色（分組柱狀圖） ---------- */
+const GREYS = ["#C9CED6", "#B6BCC7", "#A5ADBA", "#959EAD", "#8792A1"];
+const SELF_BLUE = "#80A7FF";   // 你
+const MULTI_GREEN = "#35D07F"; // 同人跨柱(≧2)
 
+/* ================================= */
 export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
-  const [ageTol, setAgeTol] = useState(0); // 移到 Top10 卡片，預設 0
+  const [ageTol, setAgeTol] = useState(0);
   const [pool] = useState(50);
 
   const [items, setItems] = useState([]);
@@ -89,7 +89,7 @@ export default function Home(){
 
   // 分組排行
   const [groupsData, setGroupsData] = useState(null);
-  const [rankTab, setRankTab] = useState("top"); // 'top' | 'groups'
+  const [rankTab, setRankTab] = useState("top");
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -305,7 +305,7 @@ export default function Home(){
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
 
-  // ============ 潛力排行：Top10（原來那張） ============
+  // ============ 潛力排行：Top10 ============
   const rankBarData = useMemo(()=>{
     if (!rankInfo) return [];
     const top = (rankInfo.top || []).map((r, idx) => ({
@@ -341,15 +341,18 @@ export default function Home(){
     return [Math.max(0, min - pad), max + pad];
   }, [rankBarData]);
 
-  // ============ 分組排行（新版） ============
+  /* ================= 分組排行 ================= */
+
+  // keys：例如 ["All-Time","2025","2024","2023","你"]
   const groupsChartKeys = useMemo(()=>{
     const set = new Set();
     (groupsData?.groups || []).forEach(g=>{
       (g.bars||[]).forEach(b => set.add(b.label));
     });
-    return Array.from(set); // e.g. ["All-Time","2025","2024","2023","你"]
+    return Array.from(set);
   }, [groupsData]);
 
+  // rows：每組成一列，並把每根柱的 meta 放到 meta_* 欄位
   const groupsChartData = useMemo(()=>{
     if (!groupsData?.groups?.length) return [];
     return groupsData.groups.map(g => {
@@ -362,23 +365,33 @@ export default function Home(){
     });
   }, [groupsData]);
 
-  const colorOfKey = (k, idx) => {
-    if (GROUP_BAR_COLORS[k]) return GROUP_BAR_COLORS[k];
-    if (/^\d{4}$/.test(k)) return YEAR_COLORS[idx % YEAR_COLORS.length];
-    return YEAR_COLORS[idx % YEAR_COLORS.length];
+  // 先計算「跨全部分組」每位選手出現次數（有秒數才算）
+  const winnersGlobalCount = useMemo(()=>{
+    const cnt = new Map();
+    (groupsData?.groups || []).forEach(g=>{
+      (g.bars||[]).forEach(b=>{
+        const who = (b && b.seconds != null && b.seconds > 0) ? (b.name || "") : "";
+        if (!who) return;
+        cnt.set(who, (cnt.get(who)||0)+1);
+      });
+    });
+    return cnt; // Map<name, times>
+  }, [groupsData]);
+
+  // 灰色挑選：依「列索引＋欄索引」簡單輪替，避免整張圖同色
+  const pickGrey = (rowIdx, barIdx) => GREYS[(rowIdx + barIdx) % GREYS.length];
+
+  // 決定每一格 Cell 顏色：你(藍) > 多柱同人(綠) > 灰
+  const getBarFill = (row, key, rowIdx, barIdx) => {
+    const meta = row?.[`meta_${key}`] || {};
+    const who = meta?.name || "";
+    if (!who) return pickGrey(rowIdx, barIdx);
+    if (who === name) return SELF_BLUE;
+    if ((winnersGlobalCount.get(who) || 0) >= 2) return MULTI_GREEN;
+    return pickGrey(rowIdx, barIdx);
   };
 
-  // 觸發以自訂輸入為對照
-  const useCustomCompare = async () => {
-    const who = (customCompare || "").trim();
-    if (!who) return;
-    setCompareName(who);
-    try{
-      await loadOpponentTrend(who, trend.length ? trend[0].t : null);
-    }catch{
-      setCompareTrend([]);
-    }
-  };
+  /* ================== UI ================== */
 
   const simplifyMeet = (s)=>s||"";
 
@@ -387,7 +400,7 @@ export default function Home(){
       <div style={{ maxWidth:1200, margin:"0 auto" }}>
         <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:2, color:"#E9DDBB", textShadow:"0 1px 0 #2a2e35", marginBottom:12 }}>游泳成績查詢</h1>
 
-        {/* 查詢列：姓名 / 項目 / 查詢（年齡誤差移到 Top10 卡片） */}
+        {/* 查詢列 */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr auto", gap:8, marginBottom:12 }}>
           <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
           <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
@@ -400,7 +413,7 @@ export default function Home(){
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
 
-        {/* 成績與專項分析（含 WA Points） */}
+        {/* 成績與專項分析 */}
         <Card>
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
@@ -429,12 +442,12 @@ export default function Home(){
           </div>
         </Card>
 
-        {/* 潛力排行：兩個標籤頁 */}
+        {/* 潛力排行：Top10 & 分組 */}
         <Card>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
             <SectionTitle>潛力排行</SectionTitle>
 
-            {/* 年齡誤差 + Refresh（只影響 Top10） */}
+            {/* 年齡誤差 + Refresh（Top10 專用） */}
             {rankTab==="top" && (
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <input
@@ -461,7 +474,7 @@ export default function Home(){
             </div>
           </div>
 
-          {/* 補充統計 */}
+          {/* 補充統計（Top10） */}
           {rankTab==="top" && (
             <div style={{ color:"#BFC6D4", marginBottom:8 }}>
               分母：{rankInfo?.denominator ?? "-"}　你的名次：
@@ -502,7 +515,7 @@ export default function Home(){
             </div>
           )}
 
-          {/* 分組排行（Group Bar：All-Time + 近三年 + 你(如有)） */}
+          {/* 分組排行（Group Bar） */}
           {rankTab==="groups" && (
             <div style={{ width:"100%", height:400 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -529,31 +542,34 @@ export default function Home(){
                     }}
                     labelFormatter={(l)=>`組別：${l}`}
                   />
-                  {groupsChartKeys.map((k, idx)=>(
+                  {groupsChartKeys.map((k, barIdx)=>(
                     <Bar
                       key={k}
                       dataKey={k}
                       name={k}
                       radius={[6,6,0,0]}
                       isAnimationActive={false}
-                      fill={colorOfKey(k, idx)}
-                    />
+                    >
+                      {groupsChartData.map((row, rowIdx)=>(
+                        <Cell key={`${k}-${row.group}`}
+                          fill={getBarFill(row, k, rowIdx, barIdx)}
+                        />
+                      ))}
+                    </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
-                * 同輸入選手性別；排除冬季短水道。每組顯示：All-Time、近三年各年最快；若輸入選手在該組有成績，另顯示「你」。
+                * 同輸入選手性別；排除冬季短水道。顏色：你=藍、同人跨柱(≧2)=綠、其餘=灰。
               </div>
             </div>
           )}
         </Card>
 
-        {/* 成績趨勢（我的、對照、與差） */}
+        {/* 成績趨勢 */}
         <Card>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
             <SectionTitle>成績趨勢</SectionTitle>
-
-            {/* 右側功能：選擇對照選手（Top10）＋ 任意輸入 */}
             <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
               <select
                 value={compareName}
@@ -572,7 +588,7 @@ export default function Home(){
                 placeholder="輸入任一選手做對照"
                 style={{ ...inp, padding:"8px 10px", minWidth:220 }}
               />
-              <button onClick={async ()=>{ await useCustomCompare(); }} style={{ ...btn, padding:"8px 12px" }}>顯示</button>
+              <button onClick={async ()=>{ const w=(customCompare||"").trim(); if(!w) return; setCompareName(w); try{ await loadOpponentTrend(w, trend.length ? trend[0].t : null);}catch{ setCompareTrend([]);} }} style={{ ...btn, padding:"8px 12px" }}>顯示</button>
             </div>
           </div>
 
