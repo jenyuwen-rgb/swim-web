@@ -77,16 +77,84 @@ const DiamondDot = (props) => {
 /* ---------- 顏色 ---------- */
 const GREYS = ["#C9CED6", "#B6BCC7", "#A5ADBA", "#959EAD", "#8792A1"];
 const SELF_BLUE = "#80A7FF"; // 你
-
-// 分組用：強勢選手專屬色盤（避開 SELF_BLUE）
 const MULTI_PALETTE = [
   "#35D07F", "#FF7A59", "#F6BD60", "#7AD3F7",
   "#C17DFF", "#FFA8D6", "#66C561", "#FFB55E",
   "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
 ];
 
-// Top10 若要彩色可換這組
-// const TOP_PALETTE = ["#FF7A59","#F6BD60","#22D3EE","#A3E635","#C17DFF","#F472B6","#7AD3F7","#F59E0B","#66C561","#9EC1FF"];
+/* ================== 自由式小泳者載入動畫 ================== */
+const LoadingOverlay = ({ show }) => {
+  if (!show) return null;
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(10,12,16,.72)",
+      backdropFilter:"blur(2px)", display:"flex", alignItems:"center", justifyContent:"center",
+      zIndex:9999
+    }}>
+      <svg width="260" height="120" viewBox="0 0 260 120">
+        {/* 水波（和網站色系：藍紫） */}
+        <defs>
+          <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#2a60ff"/><stop offset="1" stopColor="#234ad3"/>
+          </linearGradient>
+        </defs>
+
+        {/* 波紋 */}
+        <path d="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"
+              fill="none" stroke="url(#wave)" strokeWidth="4" opacity="0.5">
+          <animate attributeName="d" dur="1.8s" repeatCount="indefinite"
+                   values="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70;
+                           M0 70 Q 30 80 60 70 T 120 70 T 180 70 T 240 70;
+                           M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"/>
+        </path>
+
+        {/* 自由式小泳者（簡化路徑） */}
+        <g>
+          {/* 手臂 */}
+          <path id="arm" d="M0 0 C 8 -12, 26 -12, 34 0" fill="none" stroke="#EDEBE3" strokeWidth="3" strokeLinecap="round"/>
+          {/* 身體與頭 */}
+          <circle cx="12" cy="8" r="4" fill="#EDEBE3"/>
+          <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3"/>
+          {/* 腳踢小氣泡 */}
+          <circle cx="5" cy="22" r="1.4" fill="#7AD3F7">
+            <animate attributeName="cy" dur="0.8s" values="22;19;22" repeatCount="indefinite"/>
+          </circle>
+        </g>
+
+        {/* 群組做水平來回（往返游） */}
+        <g>
+          <g>
+            <use href="#arm" x="0" y="0">
+              <animateTransform attributeName="transform" type="rotate"
+                                values="0 12 8; -35 12 8; 0 12 8"
+                                dur="1.2s" repeatCount="indefinite"/>
+            </use>
+          </g>
+          <g transform="translate(20,55)">
+            <g id="swimmer">
+              <circle cx="12" cy="8" r="4" fill="#EDEBE3"/>
+              <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3"/>
+              <use href="#arm" x="0" y="0">
+                <animateTransform attributeName="transform" type="rotate"
+                                  values="0 12 8; -35 12 8; 0 12 8"
+                                  dur="1.2s" repeatCount="indefinite"/>
+              </use>
+            </g>
+            <animateTransform attributeName="transform" type="translate"
+                              values="20,55; 200,55; 20,55"
+                              dur="2.6s" repeatCount="indefinite"/>
+          </g>
+        </g>
+
+        {/* 提示文字 */}
+        <text x="130" y="100" textAnchor="middle" fill="#E9DDBB" fontWeight="800" fontSize="14">
+          查詢中… 正在幫你游過資料池
+        </text>
+      </svg>
+    </div>
+  );
+};
 
 /* ================================= */
 export default function Home(){
@@ -132,9 +200,9 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
+    aconst = (rightBase.span || 10) / Math.max(rect.height, 1); // secPerPx
     const px = e.clientY - draggingRef.current.startY;
-    const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
-    setRightShift(draggingRef.current.startShift + px * secPerPx);
+    setRightShift(draggingRef.current.startShift + px * aconst);
   };
   const onPointerUp = () => { draggingRef.current.active = false; };
 
@@ -351,7 +419,6 @@ export default function Home(){
         year: r.year || r.pb_year || r.ymd || r.pb_yyyymmdd || "",
         meet: r.meet || r.pb_meet || r.meet_name || r.event || "",
         isYou,
-        // 只有你是藍色，其餘一率灰階
         color: isYou ? SELF_BLUE : GREYS[idx % GREYS.length]
       };
     });
@@ -387,8 +454,6 @@ export default function Home(){
   }, [rankBarData]);
 
   /* ================= 分組排行 ================= */
-
-  // keys：例如 ["All-Time","2025","2024","2023","你"]
   const groupsChartKeys = useMemo(()=>{
     const set = new Set();
     (groupsData?.groups || []).forEach(g=>{
@@ -397,20 +462,18 @@ export default function Home(){
     return Array.from(set);
   }, [groupsData]);
 
-  // rows：每組成一列，並把每根柱的 meta 放到 meta_* 欄位
   const groupsChartData = useMemo(()=>{
     if (!groupsData?.groups?.length) return [];
     return groupsData.groups.map(g => {
       const row = { group: g.group };
       (g.bars||[]).forEach(b => {
         row[b.label] = b.seconds ?? null;
-        row[`meta_${b.label}`] = b; // {seconds,name,year,meet,isSelf,label}
+        row[`meta_${b.label}`] = b;
       });
       return row;
     });
   }, [groupsData]);
 
-  // 先計算「跨全部分組」每位選手出現次數（有秒數才算）
   const winnersGlobalCount = useMemo(()=>{
     const cnt = new Map();
     (groupsData?.groups || []).forEach(g=>{
@@ -420,10 +483,9 @@ export default function Home(){
         cnt.set(who, (cnt.get(who)||0)+1);
       });
     });
-    return cnt; // Map<name, times>
+    return cnt;
   }, [groupsData]);
 
-  // 為所有「強勢選手(≥2)」依序指派專屬色（保證不同色）
   const strongColorMap = useMemo(()=>{
     const m = new Map();
     const list = [];
@@ -432,13 +494,11 @@ export default function Home(){
     });
     list.sort();
     list.forEach((who, i) => m.set(who, MULTI_PALETTE[i % MULTI_PALETTE.length]));
-    return m; // Map<name, color>
+    return m;
   }, [winnersGlobalCount, name]);
 
-  // 灰色挑選：依「列索引＋欄索引」輪替
   const pickGrey = (rowIdx, barIdx) => GREYS[(rowIdx + barIdx) % GREYS.length];
 
-  // 取得 cell 顏色：你(藍) > 強勢選手(專屬色) > 灰
   const getBarColor = (row, key, rowIdx, barIdx) => {
     const meta = row?.[`meta_${key}`] || {};
     const who = meta?.name || "";
@@ -448,40 +508,37 @@ export default function Home(){
     return pickGrey(rowIdx, barIdx);
   };
 
-  /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
-/* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
-// ✅ 用 x / y / width + payload，不要用 viewBox
-const renderStrongLabel = (dataKey) => (props) => {
-  const { x, y, width, payload } = props;
-  if (x == null || y == null || width == null || !payload) return null;
+  const renderStrongLabel = (dataKey) => (props) => {
+    const { x, y, width, payload } = props;
+    if (x == null || y == null || width == null || !payload) return null;
 
-  const meta = payload[`meta_${dataKey}`] || {};
-  const who = meta.name || "";
-  const sec = Number(meta.seconds);
-  if (!who || !Number.isFinite(sec)) return null;
+    const meta = payload[`meta_${dataKey}`] || {};
+    const who = meta.name || "";
+    const sec = Number(meta.seconds);
+    if (!who || !Number.isFinite(sec)) return null;
 
-  const isStrong = who === name || (winnersGlobalCount.get(who) || 0) >= 2;
-  if (!isStrong) return null;
+    const isStrong = who === name || (winnersGlobalCount.get(who) || 0) >= 2;
+    if (!isStrong) return null;
 
-  const cx = x + width / 2;      // 柱中心
-  const topY = y;                // 柱頂 Y
-  const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
-  const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
+    const cx = x + width / 2;
+    const topY = y;
+    const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+    const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
 
-  return (
-    <g pointerEvents="none">
-      <text x={cx} y={topY - 16} textAnchor="middle"
-            style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-        {who}
-      </text>
-      <text x={cx} y={topY - 2} textAnchor="middle"
-            style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-        {sub}
-      </text>
-    </g>
-  );
-};
-/* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
+    return (
+      <g pointerEvents="none">
+        <text x={cx} y={topY - 16} textAnchor="middle"
+              style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+          {who}
+        </text>
+        <text x={cx} y={topY - 2} textAnchor="middle"
+              style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+          {sub}
+        </text>
+      </g>
+    );
+  };
+
   const GroupsTooltip = (props) => {
     const { active, label, payload } = props;
     if (!active || !payload || !payload.length) return null;
@@ -524,6 +581,9 @@ const renderStrongLabel = (dataKey) => (props) => {
 
   return (
     <main style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 20% -10%, #1f232b 0%, #0f1216 60%, #0a0c10 100%)", color:"#E9E9EC", padding:"24px 16px 80px" }}>
+      {/* 載入動畫 */}
+      <LoadingOverlay show={loading} />
+
       <div style={{ maxWidth:1200, margin:"0 auto" }}>
         <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:2, color:"#E9DDBB", textShadow:"0 1px 0 #2a2e35", marginBottom:12 }}>游泳成績查詢</h1>
 
@@ -574,7 +634,6 @@ const renderStrongLabel = (dataKey) => (props) => {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
             <SectionTitle>潛力排行</SectionTitle>
 
-            {/* 年齡誤差 + Refresh（Top10 專用） */}
             {rankTab==="top" && (
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 <input
@@ -601,7 +660,6 @@ const renderStrongLabel = (dataKey) => (props) => {
             </div>
           </div>
 
-          {/* 補充統計（Top10） */}
           {rankTab==="top" && (
             <div style={{ color:"#BFC6D4", marginBottom:8 }}>
               分母：{rankInfo?.denominator ?? "-"}　你的名次：
@@ -610,7 +668,6 @@ const renderStrongLabel = (dataKey) => (props) => {
             </div>
           )}
 
-          {/* Top10 Bar */}
           {rankTab==="top" && (
             <div style={{ width:"100%", height:340 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -653,7 +710,6 @@ const renderStrongLabel = (dataKey) => (props) => {
             </div>
           )}
 
-          {/* 分組排行（Group Bar） */}
           {rankTab==="groups" && (
             <div style={{ width:"100%", height:400 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -678,8 +734,6 @@ const renderStrongLabel = (dataKey) => (props) => {
                       {groupsChartData.map((row, rowIdx)=>(
                         <Cell key={`${k}-${row.group}`} fill={getBarColor(row, k, rowIdx, barIdx)} />
                       ))}
-                      {/* NEW: 強勢選手/你 → 顯示 姓名｜成績｜年份 */}
-                    
                       <LabelList content={renderStrongLabel(k)} />
                     </Bar>
                   ))}
