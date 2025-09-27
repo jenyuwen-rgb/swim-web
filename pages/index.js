@@ -251,70 +251,81 @@ export default function Home(){
     return null;
   };
 
-  async function search(cursor=0){
-    if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
-    setLoading(true); setErr("");
+ async function search(cursor = 0) {
+  setErr("");
 
-    if (cursor === 0) {
-      setItems([]); setTrend([]); setRankInfo(null);
-      setCompareTrend([]); setGroupsData(null);
-    }
-
-    try{
-      // 1) summary（自己）
-      const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
-      const r = await fetch(u);
-      if(!r.ok) throw new Error("summary 取得失敗");
-      const j = await r.json();
-
-      const newItems = (j.items || []).slice();
-
-      const me = (j.trend?.points||[])
-        .filter(p=>p.seconds>0 && p.year)
-        .map(p=>{
-          const d = parseYYYYMMDD(p.year);
-          return { x:p.year, t:d.getTime(), label:tToLabel(d.getTime()), y:p.seconds, d };
-        })
-        .sort((a,b)=>a.d-b.d);
-      setTrend(me);
-
-      // PB（排冬短）供表格標紅
-      let pbSeconds = null;
-      for(const it of newItems){
-        if (isWinterShortCourse(it["賽事名稱"])) continue;
-        const s = Number(it.seconds);
-        if (!Number.isFinite(s) || s<=0) continue;
-        if (pbSeconds===null || s < pbSeconds) pbSeconds = s;
-      }
-      for(const it of newItems){
-        const s = Number(it.seconds);
-        it.is_pb = (pbSeconds!=null && Number.isFinite(s) && s===pbSeconds);
-      }
-
-      setItems(cursor===0 ? newItems : [...items, ...newItems]);
-      setNext(j.nextCursor ?? null);
-      setAnalysis(j.analysis || {});
-      setFamStats(j.family || {});
-
-      // 2) rank（Top10）
-      const rkLatest = await refreshRankOnly();
-      if (cursor === 0) {
-        const defOpp = (rkLatest?.top?.[0]?.name) || "";
-        const willUse = compareName || defOpp;
-        if (!compareName && defOpp) setCompareName(defOpp);
-        if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
-      }
-
-      // 3) groups（分組柱狀圖）
-      if (cursor === 0) await loadGroups();
-
-    }catch(e){
-      setErr(String(e?.message || e));
-    }finally{
-      setLoading(false);
-    }
+  // 先檢查 API，再決定要不要進入 loading
+  if (!api) {
+    alert("未設定 NEXT_PUBLIC_API_URL");
+    return;
   }
 
+  setLoading(true);
+
+  // 首頁查詢時先清空
+  if (cursor === 0) {
+    setItems([]);
+    setTrend([]);
+    setRankInfo(null);
+    setCompareTrend([]);
+    setGroupsData(null);
+  }
+
+  try {
+    // 1) summary（自己）
+    const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error("summary 取得失敗");
+    const j = await r.json();
+
+    const newItems = (j.items || []).slice();
+
+    const me = (j.trend?.points || [])
+      .filter(p => p.seconds > 0 && p.year)
+      .map(p => {
+        const d = parseYYYYMMDD(p.year);
+        return { x: p.year, t: d.getTime(), label: tToLabel(d.getTime()), y: p.seconds, d };
+      })
+      .sort((a, b) => a.d - b.d);
+    setTrend(me);
+
+    // PB（排冬短）供表格標紅
+    let pbSeconds = null;
+    for (const it of newItems) {
+      if (isWinterShortCourse(it["賽事名稱"])) continue;
+      const s = Number(it.seconds);
+      if (!Number.isFinite(s) || s <= 0) continue;
+      if (pbSeconds === null || s < pbSeconds) pbSeconds = s;
+    }
+    for (const it of newItems) {
+      const s = Number(it.seconds);
+      it.is_pb = (pbSeconds != null && Number.isFinite(s) && s === pbSeconds);
+    }
+
+    setItems(cursor === 0 ? newItems : [...items, ...newItems]);
+    setNext(j.nextCursor ?? null);
+    setAnalysis(j.analysis || {});
+    setFamStats(j.family || {});
+
+    // 2) rank（Top10）
+    const rkLatest = await refreshRankOnly();
+    if (cursor === 0) {
+      const defOpp = (rkLatest?.top?.[0]?.name) || "";
+      const willUse = compareName || defOpp;
+      if (!compareName && defOpp) setCompareName(defOpp);
+      if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
+    }
+
+    // 3) groups（分組柱狀圖）
+    if (cursor === 0) await loadGroups();
+
+  } catch (e) {
+    setErr(String(e?.message || e));
+  } finally {
+    // 無論成功或失敗，都關掉 loading
+    setLoading(false);
+  }
+}
   // 初次載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
