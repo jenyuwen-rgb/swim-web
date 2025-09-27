@@ -451,12 +451,13 @@ export default function Home(){
   /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 const renderStrongLabel = (dataKey) => (props) => {
-  const { payload, viewBox } = props;
+  const { viewBox, payload } = props;
   if (!payload || !viewBox) return null;
 
+  // 這裡 payload 就是一整列的 row
   const meta = payload[`meta_${dataKey}`] || {};
   const who = meta.name || "";
-  const sec = meta.seconds;                         // ← 改用 meta.seconds
+  const sec = meta.seconds;
   if (!who || !Number.isFinite(sec)) return null;
 
   const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
