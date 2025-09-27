@@ -475,7 +475,7 @@ const renderStrongLabel = (dataKey) => (props) => {
     </g>
   );
 };
-};  /* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
+/* ====== 分組 Tooltip（自訂，顏色與柱一致、避免白色高亮） ====== */
   const GroupsTooltip = (props) => {
     const { active, label, payload } = props;
     if (!active || !payload || !payload.length) return null;
