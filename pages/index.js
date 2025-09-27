@@ -385,6 +385,20 @@ export default function Home(){
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
+
+  // 左軸 domain：下限 = min - (max - min)/2，上限 = max
+  const leftDomain = useMemo(() => {
+    let lmin = +Infinity, lmax = -Infinity;
+    for (const p of chartData) {
+      if (typeof p.my  === "number") { lmin = Math.min(lmin, p.my);  lmax = Math.max(lmax, p.my); }
+      if (typeof p.opp === "number") { lmin = Math.min(lmin, p.opp); lmax = Math.max(lmax, p.opp); }
+    }
+    if (!Number.isFinite(lmin)) return ["auto", "auto"];
+    const span = Math.max(lmax - lmin, 1);      // 避免 0 跨度
+    const lower = Math.max(0, lmin - span / 2); // 時間不會小於 0
+    return [lower, lmax];
+  }, [chartData]);
+  
   /* ===== 右軸 domain：先計基準，再加位移 ===== */
   const rightBase = useMemo(()=>{
     let lmin = +Infinity, lmax = -Infinity, dmin = +Infinity, dmax = -Infinity;
@@ -843,7 +857,7 @@ export default function Home(){
                 <YAxis
                   yAxisId="left"
                                     tickFormatter={fmtTimeMMSS}
-                  domain={["auto","auto"]}
+                  domain={leftDomain}
                   tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                   width={64} label={{ value:"時間", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
