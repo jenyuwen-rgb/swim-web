@@ -651,7 +651,7 @@ const renderStrongLabel = (dataKey) => (props) => {
           {rankTab==="groups" && (
             <div style={{ width:"100%", height:400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={groupsChartData} margin={{ top:28, right:10, bottom:16, left:10 }} isAnimationActive={false}>
+                <BarChart data={groupsChartData} margin={{ top:64, right:10, bottom:16, left:10 }} isAnimationActive={false}>
                   <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
                   <XAxis dataKey="group" tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }} axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}/>
                   <YAxis
