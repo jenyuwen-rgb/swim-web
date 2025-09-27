@@ -6,6 +6,19 @@ import {
   BarChart, Bar, LabelList, Cell
 } from "recharts";
 
+/* ---------- Tooltip 樣式（提高可讀性） ---------- */
+const tooltipStyles = {
+  contentStyle: {
+    background: "rgba(14,16,20,0.98)",
+    border: "1px solid #55607A",
+    color: "#F8FAFC",
+    boxShadow: "0 8px 20px rgba(0,0,0,.45)",
+    padding: "10px 12px"
+  },
+  labelStyle: { color: "#FFE08A", fontWeight: 800 },
+  itemStyle: { color: "#E5E7EB", fontWeight: 700 }
+};
+
 /* ---------- helpers ---------- */
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
@@ -110,6 +123,8 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
+    the:
+    0
     const px = e.clientY - draggingRef.current.startY;
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
@@ -508,7 +523,8 @@ export default function Home(){
                     width={64} label={{ value:"秒數(PB)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
                   <Tooltip
-                    contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
+                    {...tooltipStyles}
+                    cursor={false}                                    /* ← 關閉白色高亮底 */
                     formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
                     labelFormatter={(l)=>String(l)}
                   />
@@ -539,17 +555,12 @@ export default function Home(){
                     width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
                   <Tooltip
-                    contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
+                    {...tooltipStyles}
+                    cursor={false}                                    /* ← 關閉白色高亮底 */
                     formatter={(v, key, payload) => {
                       if (v == null) return ["—", key];
                       const meta = payload?.payload?.[`meta_${key}`] || {};
-                      const who = meta.name || "—";
-                      const when = meta.year || "—";
-                      const meet = meta.meet || "—";
-                      return [
-                        `${fmtTime(v)}（${who}）`,
-                        `${key}｜${when}｜${meet}`
-                      ];
+                      return [`${fmtTime(v)}（${meta.name||"—"}）`, `${key}｜${meta.year||"—"}｜${meta.meet||"—"}`];
                     }}
                     labelFormatter={(l)=>`組別：${l}`}
                   />
@@ -669,7 +680,7 @@ export default function Home(){
                 />
 
                 <Tooltip
-                  contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
+                  {...tooltipStyles}
                   formatter={(v, k)=> {
                     if (k === "my")  return [fmtTime(v), name];
                     if (k === "opp") return [fmtTime(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
