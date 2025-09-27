@@ -140,13 +140,16 @@ export default function Home(){
     setGroupsData(j || null);
   };
 
+  // 回傳最新 rk，避免 setState 非同步造成舊值
   const refreshRankOnly = async () => {
     const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
     const rr = await fetch(rkUrl);
     if (rr.ok) {
       const rk = await rr.json();
       setRankInfo(rk || null);
+      return rk || null;
     }
+    return null;
   };
 
   async function search(cursor=0){
@@ -194,10 +197,10 @@ export default function Home(){
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank（Top10；預設對照＝top1）
-      await refreshRankOnly();
+      // 2) rank（Top10；預設對照＝top1）——用最新 rk
+      const rkLatest = await refreshRankOnly();
       if (cursor === 0) {
-        const defOpp = (rankInfo?.top?.[0]?.name) || "";
+        const defOpp = (rkLatest?.top?.[0]?.name) || "";
         const willUse = compareName || defOpp;
         if (!compareName && defOpp) setCompareName(defOpp);
         if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
@@ -215,6 +218,13 @@ export default function Home(){
 
   // 初次載入
   useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
+
+  // ageTol/name/stroke 變更時自動更新 Top10
+  useEffect(() => {
+    if (!api) return;
+    (async () => { await refreshRankOnly(); })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ageTol, name, stroke]);
 
   // 切換對照選手或泳姿 → 重抓對照趨勢
   useEffect(()=>{
@@ -531,6 +541,7 @@ export default function Home(){
                   <Tooltip
                     contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
                     formatter={(v, key, payload) => {
+                      if (v == null) return ["—", key];
                       const meta = payload?.payload?.[`meta_${key}`] || {};
                       const who = meta.name || "—";
                       const when = meta.year || "—";
@@ -588,7 +599,15 @@ export default function Home(){
                 placeholder="輸入任一選手做對照"
                 style={{ ...inp, padding:"8px 10px", minWidth:220 }}
               />
-              <button onClick={async ()=>{ const w=(customCompare||"").trim(); if(!w) return; setCompareName(w); try{ await loadOpponentTrend(w, trend.length ? trend[0].t : null);}catch{ setCompareTrend([]);} }} style={{ ...btn, padding:"8px 12px" }}>顯示</button>
+              <button
+                onClick={async ()=>{
+                  const w=(customCompare||"").trim();
+                  if(!w) return;
+                  setCompareName(w);
+                  try{ await loadOpponentTrend(w, trend.length ? trend[0].t : null);}catch{ setCompareTrend([]); }
+                }}
+                style={{ ...btn, padding:"8px 12px" }}
+              >顯示</button>
             </div>
           </div>
 
