@@ -74,25 +74,22 @@ const DiamondDot = (props) => {
   );
 };
 
-/* ---------- 顏色（分組柱狀圖） ---------- */
+/* ---------- 顏色 ---------- */
 const GREYS = ["#C9CED6", "#B6BCC7", "#A5ADBA", "#959EAD", "#8792A1"];
-const SELF_BLUE = "#80A7FF";                 // 你
-// 強勢選手專屬色盤（避開 SELF_BLUE）
+const SELF_BLUE = "#80A7FF"; // 你
+
+// 分組用：強勢選手專屬色盤（避開 SELF_BLUE）
 const MULTI_PALETTE = [
   "#35D07F", "#FF7A59", "#F6BD60", "#7AD3F7",
   "#C17DFF", "#FFA8D6", "#66C561", "#FFB55E",
   "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
 ];
 
-// 穩定雜湊（FNV-1a 簡化）
-const hashStr = (s) => {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-};
+// Top10 用：高辨識度色盤（避開 SELF_BLUE）
+const TOP_PALETTE = [
+  "#FF7A59", "#F6BD60", "#22D3EE", "#A3E635", "#C17DFF",
+  "#F472B6", "#7AD3F7", "#F59E0B", "#66C561", "#9EC1FF"
+];
 
 /* ================================= */
 export default function Home(){
@@ -138,6 +135,8 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
+    the // (no-op to keep pointermove passive) 
+    0;
     const px = e.clientY - draggingRef.current.startY;
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     setRightShift(draggingRef.current.startShift + px * secPerPx);
@@ -168,7 +167,7 @@ export default function Home(){
     setGroupsData(j || null);
   };
 
-  // 回傳最新 rk，避免 setState 非同步造成舊值
+  // 回傳最新 rk
   const refreshRankOnly = async () => {
     const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
     const rr = await fetch(rkUrl);
@@ -225,7 +224,7 @@ export default function Home(){
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank（Top10；預設對照＝top1）——用最新 rk
+      // 2) rank（Top10）
       const rkLatest = await refreshRankOnly();
       if (cursor === 0) {
         const defOpp = (rkLatest?.top?.[0]?.name) || "";
@@ -343,25 +342,37 @@ export default function Home(){
     return items.slice().sort((a,b)=>String(b["年份"]).localeCompare(String(a["年份"])));
   },[items]);
 
-  // ============ 潛力排行：Top10 ============
+  /* ============ 潛力排行：Top10（資料＋顏色） ============ */
   const rankBarData = useMemo(()=>{
     if (!rankInfo) return [];
-    const top = (rankInfo.top || []).map((r, idx) => ({
-      key: `top-${idx+1}`,
-      label: `#${idx+1}`,
-      name: r.name,
-      seconds: r.pb_seconds,
-      isYou: r.name === name
-    }));
+    const top = (rankInfo.top || []).map((r, idx) => {
+      const isYou = r.name === name;
+      return {
+        key: `top-${idx+1}`,
+        label: `#${idx+1}`,
+        rank: idx + 1,
+        name: r.name,
+        seconds: r.pb_seconds,
+        year: r.year || r.pb_year || r.ymd || r.pb_yyyymmdd || "",
+        meet: r.meet || r.pb_meet || r.meet_name || r.event || "",
+        isYou,
+        color: isYou ? SELF_BLUE : TOP_PALETTE[idx % TOP_PALETTE.length]
+      };
+    });
+
     const you = rankInfo.you;
     const isYouInTop = top.some(x => x.isYou);
     if (you && !isYouInTop) {
       top.push({
         key: `you-${you.rank}`,
         label: `你(#${you.rank})`,
+        rank: you.rank,
         name: you.name,
         seconds: you.pb_seconds,
-        isYou: true
+        year: you.year || you.pb_year || you.ymd || you.pb_yyyymmdd || "",
+        meet: you.meet || you.pb_meet || you.meet_name || you.event || "",
+        isYou: true,
+        color: SELF_BLUE
       });
     }
     return top;
@@ -416,15 +427,15 @@ export default function Home(){
     return cnt; // Map<name, times>
   }, [groupsData]);
 
-  // 為所有「強勢選手(≥2)」建立專屬色
+  // 為所有「強勢選手(≥2)」依序指派專屬色（保證不同色）
   const strongColorMap = useMemo(()=>{
     const m = new Map();
-    for (const [who, times] of (winnersGlobalCount || new Map()).entries()) {
-      if (who && who !== name && times >= 2) {
-        const idx = hashStr(who) % MULTI_PALETTE.length;
-        m.set(who, MULTI_PALETTE[idx]);
-      }
-    }
+    const list = [];
+    (winnersGlobalCount || new Map()).forEach((times, who) => {
+      if (who && who !== name && times >= 2) list.push(who);
+    });
+    list.sort(); // 穩定順序
+    list.forEach((who, i) => m.set(who, MULTI_PALETTE[i % MULTI_PALETTE.length]));
     return m; // Map<name, color>
   }, [winnersGlobalCount, name]);
 
@@ -587,11 +598,21 @@ export default function Home(){
                   />
                   <Tooltip
                     {...tooltipStyles}
-                    cursor={false}                           // 關閉白色背景高亮
-                    formatter={(v, k, payload)=>[fmtTime(v), payload?.payload?.name || ""]}
-                    labelFormatter={(l)=>String(l)}
+                    cursor={false}
+                    formatter={(v, _k, p) => {
+                      const row = p?.payload || {};
+                      const right = `${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"}`;
+                      return [fmtTime(v), right];
+                    }}
+                    labelFormatter={(l, payload) => {
+                      const row = payload && payload[0] && payload[0].payload;
+                      return row?.label || String(l);
+                    }}
                   />
-                  <Bar dataKey="seconds" radius={[6,6,0,0]} isAnimationActive={false} fill="#7aa2ff">
+                  <Bar dataKey="seconds" radius={[6,6,0,0]} isAnimationActive={false}>
+                    {rankBarData.map((row)=>(
+                      <Cell key={row.key} fill={row.color}/>
+                    ))}
                     <LabelList
                       dataKey="name"
                       position="top"
@@ -617,10 +638,7 @@ export default function Home(){
                     axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
                     width={64} label={{ value:"最快(秒)", angle:-90, position:"insideLeft", fill:"#d9dde7" }}
                   />
-                  <Tooltip
-                    cursor={false}                             // 關閉白色背景高亮
-                    content={<GroupsTooltip />}                // 自訂內容（同色顯示）
-                  />
+                  <Tooltip cursor={false} content={<GroupsTooltip />} />
                   {groupsChartKeys.map((k, barIdx)=>(
                     <Bar
                       key={k}
@@ -630,16 +648,14 @@ export default function Home(){
                       isAnimationActive={false}
                     >
                       {groupsChartData.map((row, rowIdx)=>(
-                        <Cell key={`${k}-${row.group}`}
-                          fill={getBarColor(row, k, rowIdx, barIdx)}
-                        />
+                        <Cell key={`${k}-${row.group}`} fill={getBarColor(row, k, rowIdx, barIdx)} />
                       ))}
                     </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
-                * 同輸入選手性別；排除冬季短水道。顏色：你=藍；跨組強勢選手(≥2)＝各自專屬色；其餘＝灰階。
+                * 同輸入選手性別；排除冬季短水道。顏色：你=藍；跨組強勢選手(≥2)=各自專屬色（保證不同色）；其餘=灰階。
               </div>
             </div>
           )}
