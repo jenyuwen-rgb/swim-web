@@ -451,17 +451,22 @@ export default function Home(){
   /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 /* === NEW: 強勢選手/你 → 直接在柱上顯示「姓名｜成績｜年份」 === */
 const renderStrongLabel = (dataKey) => (props) => {
-  const { value, payload, viewBox } = props;         // ✅ 用 payload / viewBox
-  if (value == null || !payload || !viewBox) return null;
+  const { payload, viewBox } = props;
+  if (!payload || !viewBox) return null;
+
   const meta = payload[`meta_${dataKey}`] || {};
   const who = meta.name || "";
-  if (!who) return null;
+  const sec = meta.seconds;                         // ← 改用 meta.seconds
+  if (!who || !Number.isFinite(sec)) return null;
+
   const isStrong = (winnersGlobalCount.get(who) || 0) >= 2 || who === name;
   if (!isStrong) return null;
-  const cx = viewBox.x + (viewBox.width || 0) / 2;   // 柱中心
-  const topY = viewBox.y;                             // 柱頂 Y
+
+  const cx = viewBox.x + (viewBox.width || 0) / 2;
+  const topY = viewBox.y;
   const color = (who === name) ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
-  const sub = `${fmtTime(value)}｜${meta.year || "—"}`;
+  const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
+
   return (
     <g pointerEvents="none">
       <text x={cx} y={topY - 16} textAnchor="middle"
