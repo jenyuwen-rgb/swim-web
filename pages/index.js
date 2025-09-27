@@ -61,11 +61,19 @@ const DiamondDot = (props) => {
   );
 };
 
+/* ---------- 顏色方案（分組圖） ---------- */
+const GROUP_BAR_COLORS = {
+  "All-Time": "#7AA2FF",
+  "你": "#FF6B6B",
+  // 年份色（會 fallback 到一組循環色）
+};
+const YEAR_COLORS = ["#66E3FF", "#A7F0BA", "#FFD166", "#C7B1FF", "#FFA8E2"];
+
 export default function Home(){
   const [name, setName] = useState("温心妤");
   const [stroke, setStroke] = useState("50公尺蛙式");
-  const [ageTol, setAgeTol] = useState(1); // 年齡誤差：0=同年、1=±1
-  const [pool] = useState(50); // 先固定長水道，之後可做切換
+  const [ageTol, setAgeTol] = useState(0); // 預設 0（移到 Top10 卡片內）
+  const [pool] = useState(50);
 
   const [items, setItems] = useState([]);
   const [next, setNext] = useState(null);
@@ -73,13 +81,13 @@ export default function Home(){
   const [analysis, setAnalysis] = useState(null);
 
   // 自己、對照與排行
-  const [trend, setTrend] = useState([]);               // 自己
+  const [trend, setTrend] = useState([]);
   const [rankInfo, setRankInfo] = useState(null);
 
-  // 對照（內嵌於「成績趨勢」卡片）
-  const [compareName, setCompareName] = useState("");   // 下拉或輸入後目前使用者
-  const [customCompare, setCustomCompare] = useState(""); // 輸入框值
-  const [compareTrend, setCompareTrend] = useState([]); // 對照趨勢
+  // 對照（趨勢）
+  const [compareName, setCompareName] = useState("");
+  const [customCompare, setCustomCompare] = useState("");
+  const [compareTrend, setCompareTrend] = useState([]);
 
   // 分組排行
   const [groupsData, setGroupsData] = useState(null);
@@ -134,6 +142,15 @@ export default function Home(){
     setGroupsData(j || null);
   };
 
+  const refreshRankOnly = async () => {
+    const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
+    const rr = await fetch(rkUrl);
+    if (rr.ok) {
+      const rk = await rr.json();
+      setRankInfo(rk || null);
+    }
+  };
+
   async function search(cursor=0){
     if (!api) return alert("未設定 NEXT_PUBLIC_API_URL");
     setLoading(true); setErr("");
@@ -179,22 +196,13 @@ export default function Home(){
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank（拿 top10；預設對照＝top1）
-      const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
-      const rr = await fetch(rkUrl);
-      if(rr.ok){
-        const rk = await rr.json();
-        setRankInfo(rk || null);
-
-        if (cursor === 0) {
-          const defaultOpp = rk?.top?.[0]?.name || "";
-          const willUse = compareName || defaultOpp;
-          if (!compareName && defaultOpp) setCompareName(defaultOpp);
-          if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
-        }
-      }else{
-        setRankInfo(null);
-        setCompareTrend([]);
+      // 2) rank（Top10；預設對照＝top1）
+      await refreshRankOnly();
+      if (cursor === 0) {
+        const defaultOpp = (rankInfo?.top?.[0]?.name) || "";
+        const willUse = compareName || defaultOpp;
+        if (!compareName && defaultOpp) setCompareName(defaultOpp);
+        if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
       }
 
       // 3) groups（分組柱狀圖）
@@ -335,20 +343,38 @@ export default function Home(){
     return [Math.max(0, min - pad), max + pad];
   }, [rankBarData]);
 
-  // ============ 分組排行：轉成 grouped bar 用的資料 ============
+  // ============ 分組排行（新版） ============
+  // 取所有出現過的 label keys（含 "你"）
   const groupsChartKeys = useMemo(()=>{
-    const bars = groupsData?.groups?.[0]?.bars || [];
-    return bars.map(b => b.label); // e.g. ["All-Time","2025","2024","2023"]
+    const set = new Set();
+    (groupsData?.groups || []).forEach(g=>{
+      (g.bars||[]).forEach(b => set.add(b.label));
+    });
+    return Array.from(set); // 例如 ["All-Time","2025","2024","2023","你"]
   }, [groupsData]);
+
+  // 將每組轉成一列：各 label 放秒數，並附 meta_label
   const groupsChartData = useMemo(()=>{
     if (!groupsData?.groups?.length) return [];
-    // { group:"高中", bars:[{label:"All-Time",seconds:..},{label:"2025",..}...] }
     return groupsData.groups.map(g => {
       const row = { group: g.group };
-      (g.bars||[]).forEach(b => { row[b.label] = b.seconds; });
+      (g.bars||[]).forEach(b => {
+        row[b.label] = b.seconds ?? null;
+        row[`meta_${b.label}`] = b; // {seconds,name,year,meet,isSelf,label}
+      });
       return row;
     });
   }, [groupsData]);
+
+  // 依 label 取得顏色
+  const colorOfKey = (k, idx) => {
+    if (GROUP_BAR_COLORS[k]) return GROUP_BAR_COLORS[k];
+    if (/^\d{4}$/.test(k)) {
+      // 年份
+      return YEAR_COLORS[idx % YEAR_COLORS.length];
+    }
+    return YEAR_COLORS[idx % YEAR_COLORS.length];
+  };
 
   // 觸發以自訂輸入為對照
   const useCustomCompare = async () => {
@@ -369,22 +395,14 @@ export default function Home(){
       <div style={{ maxWidth:1200, margin:"0 auto" }}>
         <h1 style={{ fontSize:28, fontWeight:800, letterSpacing:2, color:"#E9DDBB", textShadow:"0 1px 0 #2a2e35", marginBottom:12 }}>游泳成績查詢</h1>
 
-        {/* 查詢列：姓名 / 項目 / 年齡誤差 / 查詢 */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr 0.8fr auto", gap:8, marginBottom:12 }}>
+        {/* 查詢列：姓名 / 項目 / 查詢（年齡誤差移到 Top10 卡片） */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr auto", gap:8, marginBottom:12 }}>
           <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
           <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
             {["50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式","100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式","200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"].map(x=>
               <option key={x} value={x}>{x}</option>
             )}
           </select>
-          <input
-            type="number" min={0} max={5} step={1}
-            value={ageTol}
-            onChange={(e)=>setAgeTol(Math.max(0, Math.min(5, Number(e.target.value))))}
-            style={inp}
-            placeholder="年齡誤差(年)"
-            title="年齡誤差：0=同年；1=±1；…"
-          />
           <button onClick={()=>{ setRightShift(0); search(0); }} disabled={loading} style={btn}>查詢</button>
         </div>
 
@@ -421,8 +439,24 @@ export default function Home(){
 
         {/* 潛力排行：兩個標籤頁 */}
         <Card>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
             <SectionTitle>潛力排行</SectionTitle>
+
+            {/* 年齡誤差 + Refresh（只影響 Top10） */}
+            {rankTab==="top" && (
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <input
+                  type="number" min={0} max={5} step={1}
+                  value={ageTol}
+                  onChange={(e)=>setAgeTol(Math.max(0, Math.min(5, Number(e.target.value))))}
+                  style={{ ...inp, width:120, padding:"8px 10px" }}
+                  placeholder="年齡誤差(年)"
+                  title="年齡誤差：0=同年；1=±1；…"
+                />
+                <button onClick={refreshRankOnly} style={{ ...btn, padding:"8px 12px" }}>Refresh</button>
+              </div>
+            )}
+
             <div style={{ display:"flex", gap:8 }}>
               <button
                 onClick={()=>setRankTab("top")}
@@ -476,9 +510,9 @@ export default function Home(){
             </div>
           )}
 
-          {/* 分組排行（Group Bar：All-Time + 近三年） */}
+          {/* 分組排行（Group Bar：All-Time + 近三年 + 你(如有)） */}
           {rankTab==="groups" && (
-            <div style={{ width:"100%", height:380 }}>
+            <div style={{ width:"100%", height:400 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={groupsChartData} margin={{ top:10, right:10, bottom:16, left:10 }} isAnimationActive={false}>
                   <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3"/>
@@ -491,23 +525,38 @@ export default function Home(){
                   />
                   <Tooltip
                     contentStyle={{ background:"#0f1216", border:"1px solid #424957", color:"#F6F7FB", boxShadow:"0 6px 18px rgba(0,0,0,.45)" }}
-                    formatter={(v, k)=>[fmtTime(v), k]}
+                    formatter={(v, key, payload) => {
+                      const meta = payload?.payload?.[`meta_${key}`] || {};
+                      const who = meta.name || "—";
+                      const when = meta.year || "—";
+                      const meet = meta.meet || "—";
+                      return [
+                        `${fmtTime(v)}（${who}）`,
+                        `${key}｜${when}｜${meet}`
+                      ];
+                    }}
                     labelFormatter={(l)=>`組別：${l}`}
                   />
-                  {/* 依序畫出各年度/All-Time 的柱 */}
                   {groupsChartKeys.map((k, idx)=>(
-                    <Bar key={k} dataKey={k} name={k} radius={[6,6,0,0]} isAnimationActive={false} />
+                    <Bar
+                      key={k}
+                      dataKey={k}
+                      name={k}
+                      radius={[6,6,0,0]}
+                      isAnimationActive={false}
+                      fill={colorOfKey(k, idx)}
+                    />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ color:"#AEB4BF", marginTop:6, fontSize:12 }}>
-                * 同輸入選手性別；排除冬季短水道。每組顯示：All-Time 及近三年各年最快。
+                * 同輸入選手性別；排除冬季短水道。每組顯示：All-Time、近三年各年最快；若輸入選手在該組有成績，另顯示「你」。
               </div>
             </div>
           )}
         </Card>
 
-        {/* 成績趨勢（我的、對照、與差）——把對照控制移入本卡片 */}
+        {/* 成績趨勢（我的、對照、與差） */}
         <Card>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
             <SectionTitle>成績趨勢</SectionTitle>
