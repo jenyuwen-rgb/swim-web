@@ -278,7 +278,8 @@ export default function Home(){
     setLoading(true);
 
     if (cursor === 0) {
-      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]); setGroupsData(null);
+      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]); setGroupsData(null);setCompareName("");       // 新增：清空對照選手
+  setCustomCompare("");
     }
 
     try {
