@@ -320,14 +320,14 @@ export default function Home(){
       setFamStats(j.family || {});
 
       // 2) rank（Top10）
-      const rkLatest = await refreshRankOnly();
-      if (cursor === 0) {
-        const defOpp = (rkLatest?.top?.[0]?.name) || "";
-        const willUse = compareName || defOpp;
-        if (!compareName && defOpp) setCompareName(defOpp);
-        if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
-      }
-
+      await refreshRankOnly();
+if (cursor === 0) {
+  if (compareName) {
+    await loadOpponentTrend(compareName, me.length ? me[0].t : null);
+  } else {
+    setCompareTrend([]); // 明確清空
+  }
+}
       // 3) groups（分組柱狀圖）
       if (cursor === 0) await loadGroups();
 
