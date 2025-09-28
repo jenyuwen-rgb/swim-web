@@ -1282,7 +1282,7 @@ const inp = {
   border: "1px solid #2b2f36",
   color: "#E9E9EC",
   padding: "10px 12px",
-  borderRadius: 10,
+  borderRadius: 16,
   outline: "none"
 };
 const btn = {
