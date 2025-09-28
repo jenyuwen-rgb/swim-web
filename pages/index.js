@@ -1,3 +1,4 @@
+
 // pages/index.js
 import { useMemo, useState, useEffect, useRef } from "react";
 import {
@@ -35,7 +36,7 @@ const fmtTimeMMSS = (s) => {
   if (!Number.isFinite(v)) return "-";
   const m = Math.floor(v / 60);
   const sec = v - m * 60;
-  return `${String(m).padStart(2, "0")}:${sec.toFixed(2).padStart(5, "0")}`;
+  return ${String(m).padStart(2, "0")}:${sec.toFixed(2).padStart(5, "0")};
 };
 const fmtTime = (s) => {
   if (!s && s !== 0) return "-";
@@ -43,7 +44,7 @@ const fmtTime = (s) => {
   if (Number.isNaN(sec)) return "-";
   const m = Math.floor(sec / 60);
   const r = sec - m * 60;
-  return m ? `${m}:${r.toFixed(2).padStart(5, "0")}` : r.toFixed(2);
+  return m ? ${m}:${r.toFixed(2).padStart(5, "0")} : r.toFixed(2);
 };
 const parseYYYYMMDD = (v) => {
   const s = String(v || "");
@@ -54,7 +55,7 @@ const tToLabel = (t) => {
   const d = new Date(t);
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth()+1).padStart(2, "0");
-  return `${yy}/${mm}`;
+  return ${yy}/${mm};
 };
 const api = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -73,7 +74,7 @@ const TriDot = (props) => {
   const size = 5.5;
   return (
     <path
-      d={`M ${cx} ${cy-size} L ${cx-size} ${cy+size} L ${cx+size} ${cy+size} Z`}
+      d={M ${cx} ${cy-size} L ${cx-size} ${cy+size} L ${cx+size} ${cy+size} Z}
       fill="#35D07F" stroke="#0a0c10" strokeWidth="1"
     />
   );
@@ -85,7 +86,7 @@ const DiamondDot = (props) => {
   const s = 5;
   return (
     <path
-      d={`M ${cx} ${cy-s} L ${cx-s} ${cy} L ${cx} ${cy+s} L ${cx+s} ${cy} Z`}
+      d={M ${cx} ${cy-s} L ${cx-s} ${cy} L ${cx} ${cy+s} L ${cx+s} ${cy} Z}
       fill="#FFD166" stroke="#0a0c10" strokeWidth="1"
     />
   );
@@ -190,7 +191,7 @@ const GroupsTooltip = ({ active, label, payload }) => {
     .map(p => {
       const dk = p?.dataKey;
       const row = p?.payload || {};
-      const meta = row?.[`meta_${dk}`] || {};
+      const meta = row?.[meta_${dk}] || {};
       const who = meta.name || "";
       const sec = Number(meta.seconds);
       const year = meta.year || "";
@@ -282,7 +283,7 @@ export default function Home(){
   const loadOpponentTrend = async (who, baseStartT) => {
     const target = sanitizeName(who);
     if (!isValidQueryName(target)) { setCompareTrend([]); return; }
-    const u = `${api}/api/summary?name=${encodeURIComponent(target)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=0`;
+    const u = ${api}/api/summary?name=${encodeURIComponent(target)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=0;
     const signal = abortKey("compare");
     const r = await fetch(u, { signal });
     if (!r.ok) throw new Error("compare summary 失敗");
@@ -300,7 +301,7 @@ export default function Home(){
   const loadGroups = async () => {
     const who = sanitizeName(name);
     if (!isValidQueryName(who)) { setGroupsData(null); return; }
-    const u = `${api}/api/groups?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}`;
+    const u = ${api}/api/groups?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)};
     const signal = abortKey("groups");
     const r = await fetch(u, { signal });
     if (!r.ok) { setGroupsData(null); return; }
@@ -312,7 +313,7 @@ export default function Home(){
   const refreshRankOnly = async () => {
     const who = sanitizeName(name);
     if (!isValidQueryName(who)) { setRankInfo(null); return null; }
-    const rkUrl = `${api}/api/rank?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
+    const rkUrl = ${api}/api/rank?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol};
     const signal = abortKey("rank");
     const rr = await fetch(rkUrl, { signal });
     if (rr.ok) {
@@ -343,7 +344,7 @@ export default function Home(){
 
     try {
       // 1) summary（自己）
-      const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
+      const u = ${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor};
       const signal = abortKey("summary");
       const r = await fetch(u, { signal });
       if (!r.ok) throw new Error("summary 取得失敗");
@@ -500,7 +501,7 @@ export default function Home(){
   const oppRank = (rankInfo?.top || []).find(x => x.name === compareName)?.rank;
   const legendMap = {
     my: name || "輸入選手",
-    opp: compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照",
+    opp: compareName ? #${oppRank ?? "?"} ${compareName} : "對照",
     diff: "差距",
   };
 
@@ -515,8 +516,8 @@ export default function Home(){
     const top = (rankInfo.top || []).map((r, idx) => {
       const isYou = r.name === name;
       return {
-        key: `top-${idx+1}`,
-        label: `#${idx+1}`,
+        key: top-${idx+1},
+        label: #${idx+1},
         rank: idx + 1,
         name: r.name,
         seconds: r.pb_seconds,
@@ -531,8 +532,8 @@ export default function Home(){
     const isYouInTop = top.some(x => x.isYou);
     if (you && !isYouInTop) {
       top.push({
-        key: `you-${you.rank}`,
-        label: `你(#${you.rank})`,
+        key: you-${you.rank},
+        label: 你(#${you.rank}),
         rank: you.rank,
         name: you.name,
         seconds: you.pb_seconds,
@@ -572,7 +573,7 @@ export default function Home(){
       const row = { group: g.group };
       (g.bars||[]).forEach(b => {
         row[b.label] = b.seconds ?? null;
-        row[`meta_${b.label}`] = b;
+        row[meta_${b.label}] = b;
       });
       return row;
     });
@@ -604,7 +605,7 @@ export default function Home(){
   const pickGrey = (rowIdx, barIdx) => GREYS[(rowIdx + barIdx) % GREYS.length];
 
   const getBarColor = (row, key, rowIdx, barIdx) => {
-    const meta = row?.[`meta_${key}`] || {};
+    const meta = row?.[meta_${key}] || {};
     const who = meta?.name || "";
     if (!who) return pickGrey(rowIdx, barIdx);
     if (who === name) return SELF_BLUE;
@@ -612,37 +613,36 @@ export default function Home(){
     return pickGrey(rowIdx, barIdx);
   };
 
- // ② 取代你現有的 renderStrongLabel 定義
-const renderStrongLabel = (dataKey) => (props) => {
-  const { x, y, width, payload } = props;
-  if (x == null || y == null || width == null || !payload) return null;
+  const renderStrongLabel = (dataKey) => (props) => {
+    const { x, y, width, payload } = props;
+    if (x == null || y == null || width == null || !payload) return null;
 
-  const meta = payload[`meta_${dataKey}`] || {};
-  const who = meta.name || "";
-  const sec = Number(meta.seconds);
-  if (!who || !Number.isFinite(sec)) return null;
+    const meta = payload[meta_${dataKey}] || {};
+    const who = meta.name || "";
+    const sec = Number(meta.seconds);
+    if (!who || !Number.isFinite(sec)) return null;
 
-  // 只要出現在「圖例」中就顯示（= 你 + 強勢選手）
-  if (!legendNamesSet.has(who)) return null;
+    const isStrong = who === name || (winnersGlobalCount.get(who) || 0) >= 2;
+    if (!isStrong) return null;
 
-  const cx = x + width / 2;
-  const topY = y;
-  const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
-  const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
+    const cx = x + width / 2;
+    const topY = y;
+    const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+    const sub = ${fmtTime(sec)}｜${meta.year || "—"};
 
-  return (
-    <g pointerEvents="none">
-      <text x={cx} y={topY - 16} textAnchor="middle"
-            style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-        {who}
-      </text>
-      <text x={cx} y={topY - 2} textAnchor="middle"
-            style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-        {sub}
-      </text>
-    </g>
-  );
-};
+    return (
+      <g pointerEvents="none">
+        <text x={cx} y={topY - 16} textAnchor="middle"
+              style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+          {who}
+        </text>
+        <text x={cx} y={topY - 2} textAnchor="middle"
+              style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+          {sub}
+        </text>
+      </g>
+    );
+  };
 
   // 供圖例用：只顯示藍色（你）與非灰色強勢選手
   const groupsLegendEntries = useMemo(()=>{
@@ -658,10 +658,6 @@ const renderStrongLabel = (dataKey) => (props) => {
     });
     return out;
   }, [name, winnersGlobalCount, strongColorMap]);
-  // ① 放在 groupsLegendEntries 之後
-const legendNamesSet = useMemo(() => {
-  return new Set((groupsLegendEntries || []).map(e => e.name));
-}, [groupsLegendEntries]);
 
   /* ================== UI ================== */
 
@@ -710,7 +706,7 @@ const legendNamesSet = useMemo(() => {
         <Card>
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
-            <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
+            <KV label="出賽次數" value={${analysis?.meetCount ?? 0} 場}/>
             <KV label="平均成績" value={fmtTimeMMSS(analysis?.avg_seconds)}/>
             <KV label="最佳成績 (PB)" value={fmtTimeMMSS(analysis?.pb_seconds)}/>
             <KV label="WA Points" value={analysis?.wa_points != null ? Math.round(analysis.wa_points) : "-"} />
@@ -726,8 +722,8 @@ const legendNamesSet = useMemo(() => {
               return (
                 <MiniCard key={s}>
                   <div style={{ fontWeight:700, marginBottom:6 }}>{s}</div>
-                  <KV label="出賽" value={`${v.count ?? 0} 場`} small/>
-                  <KV label="最愛距離" value={v.mostDist ? `${v.mostDist}${v.mostCount?`（${v.mostCount}場）`:""}` : "-"} small/>
+                  <KV label="出賽" value={${v.count ?? 0} 場} small/>
+                  <KV label="最愛距離" value={v.mostDist ? ${v.mostDist}${v.mostCount?（${v.mostCount}場）:""} : "-"} small/>
                   <KV label="PB" value={fmtTime(v.pb_seconds)} small/>
                 </MiniCard>
               );
@@ -770,7 +766,7 @@ const legendNamesSet = useMemo(() => {
             <div style={{ color:"#BFC6D4", marginBottom:8 }}>
               分母：{rankInfo?.denominator ?? "-"}　你的名次：
               <span style={{ color:"#FFD166", fontWeight:800 }}>{rankInfo?.rank ?? "-"}</span>　
-              百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
+              百分位：{rankInfo?.percentile ? ${rankInfo.percentile.toFixed(1)}% : "-"}　年齡誤差：±{ageTol}
             </div>
           )}
 
@@ -792,7 +788,7 @@ const legendNamesSet = useMemo(() => {
                     cursor={false}
                     formatter={(v, _k, p) => {
                       const row = p?.payload || {};
-                      const right = `${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"}`;
+                      const right = ${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"};
                       return [fmtTimeMMSS(v), right]; 
                     }}
                     labelFormatter={(l, payload) => {
@@ -808,7 +804,7 @@ const legendNamesSet = useMemo(() => {
                       dataKey="name"
                       position="top"
                       style={{ fill:"#fff", fontSize:12, fontWeight:800, textShadow:"0 1px 0 rgba(0,0,0,.7)" }}
-                      formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
+                      formatter={(v, entry) => (entry?.payload?.isYou ? 你 · ${v} : v)}
                     />
                   </Bar>
                 </BarChart>
@@ -841,7 +837,7 @@ const legendNamesSet = useMemo(() => {
                         isAnimationActive={false}
                       >
                         {groupsChartData.map((row, rowIdx)=>(
-                          <Cell key={`${k}-${row.group}`} fill={getBarColor(row, k, rowIdx, barIdx)} />
+                          <Cell key={${k}-${row.group}} fill={getBarColor(row, k, rowIdx, barIdx)} />
                         ))}
                         <LabelList content={renderStrongLabel(k)} />
                       </Bar>
@@ -869,7 +865,7 @@ const legendNamesSet = useMemo(() => {
               >
                 <option value="">（不顯示對照）</option>
                 {(rankInfo?.top||[]).map((r)=>(
-                  <option key={r.name} value={r.name}>{`#${r.rank} ${r.name}`}</option>
+                  <option key={r.name} value={r.name}>{#${r.rank} ${r.name}}</option>
                 ))}
               </select>
               <input
@@ -951,8 +947,8 @@ const legendNamesSet = useMemo(() => {
                   {...tooltipStyles}
                   formatter={(v, k)=> {
                     if (k === "my")  return [fmtTimeMMSS(v), name];
-                    if (k === "opp") return [fmtTimeMMSS(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
-                    if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
+                    if (k === "opp") return [fmtTimeMMSS(v), compareName ? #${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName} : "對照"];
+                    if (k === "diff") return [${Number(v).toFixed(2)} s, "差（我-對照）"];
                     return [v, k];
                   }}
                   labelFormatter={(t)=>String(tToLabel(t))}
@@ -1001,7 +997,7 @@ const legendNamesSet = useMemo(() => {
                 {pbPoint && (
                   <ReferenceDot x={pbPoint.t} y={pbPoint.y} r={6}
                     fill="#FF6B6B" stroke="#0a0c10" strokeWidth={1}
-                    isFront label={{ value:`PB ${fmtTime(pbPoint.y)}`, position:"right", fill:"#FFC7C7", fontSize:12 }}/>
+                    isFront label={{ value:PB ${fmtTime(pbPoint.y)}, position:"right", fill:"#FFC7C7", fontSize:12 }}/>
                 )}
               </LineChart>
             </ResponsiveContainer>
