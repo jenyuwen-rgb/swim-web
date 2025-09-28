@@ -1082,14 +1082,3 @@ export default function Home() {
   );
 }
 
-/* ---------- UI bits ---------- */
-const Card = ({ children }) => (
-  <section style={{
-    background: "linear-gradient(180deg, rgba(31,35,43,.9), rgba(19,22,27,.98)) padding-box, linear-gradient(180deg, #2b2f36, #14171c) border-box",
-    border: "1px solid transparent", borderRadius: 14, boxShadow: "0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02)",
-    padding: 16, margin: "12px 0"
-  }}>{children}</section>
-);
-const MiniCard = ({ children }) => (
-  <div style={{
-    background: "linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26
