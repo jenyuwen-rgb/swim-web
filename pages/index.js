@@ -1081,4 +1081,78 @@ export default function Home() {
     </main>
   );
 }
+/* ---------- UI bits ---------- */
+const inp = {
+  background: "#1c1f26",
+  border: "1px solid #3a3f48",
+  borderRadius: 6,
+  padding: "6px 8px",
+  color: "#E9E9EC",
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const btn = {
+  background: "linear-gradient(180deg,#2a60ff,#234ad3)",
+  border: "none",
+  borderRadius: 6,
+  padding: "6px 12px",
+  color: "#fff",
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const tabBtn = {
+  background: "rgba(36,40,48,.7)",
+  border: "1px solid #3a3f48",
+  borderRadius: 6,
+  padding: "6px 12px",
+  color: "#d9dde7",
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const tabBtnActive = {
+  background: "linear-gradient(180deg,#2a60ff,#234ad3)",
+  color: "#fff",
+  border: "none",
+};
+
+const table = { width: "100%", borderCollapse: "collapse", marginTop: 8 };
+const th = { borderBottom: "1px solid #333", padding: "6px 8px", textAlign: "left", color: "#BFC6D4" };
+const td = { borderBottom: "1px solid #222", padding: "6px 8px" };
+
+const SectionTitle = ({ children }) => (
+  <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 6, color: "#FFE08A" }}>
+    {children}
+  </h2>
+);
+
+const KV = ({ label, value, small }) => (
+  <div style={{ fontSize: small ? 13 : 16, fontWeight: 700 }}>
+    <span style={{ color: "#AEB4BF", marginRight: 6 }}>{label}</span>
+    <span style={{ color: "#E9E9EC" }}>{value}</span>
+  </div>
+);
+
+const Card = ({ children }) => (
+  <section style={{
+    background: "linear-gradient(180deg, rgba(31,35,43,.9), rgba(19,22,27,.98)) padding-box, linear-gradient(180deg, #2b2f36, #14171c) border-box",
+    border: "1px solid transparent", borderRadius: 14,
+    boxShadow: "0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02)",
+    padding: 16, margin: "12px 0"
+  }}>{children}</section>
+);
+
+const MiniCard = ({ children }) => (
+  <div style={{
+    background: "linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26,.95))",
+    borderRadius: 10,
+    padding: 12,
+  }}>
+    {children}
+  </div>
+);
 
