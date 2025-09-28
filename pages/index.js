@@ -612,36 +612,37 @@ export default function Home(){
     return pickGrey(rowIdx, barIdx);
   };
 
-  const renderStrongLabel = (dataKey) => (props) => {
-    const { x, y, width, payload } = props;
-    if (x == null || y == null || width == null || !payload) return null;
+ // ② 取代你現有的 renderStrongLabel 定義
+const renderStrongLabel = (dataKey) => (props) => {
+  const { x, y, width, payload } = props;
+  if (x == null || y == null || width == null || !payload) return null;
 
-    const meta = payload[`meta_${dataKey}`] || {};
-    const who = meta.name || "";
-    const sec = Number(meta.seconds);
-    if (!who || !Number.isFinite(sec)) return null;
+  const meta = payload[`meta_${dataKey}`] || {};
+  const who = meta.name || "";
+  const sec = Number(meta.seconds);
+  if (!who || !Number.isFinite(sec)) return null;
 
-    const isStrong = who === name || (winnersGlobalCount.get(who) || 0) >= 2;
-    if (!isStrong) return null;
+  // 只要出現在「圖例」中就顯示（= 你 + 強勢選手）
+  if (!legendNamesSet.has(who)) return null;
 
-    const cx = x + width / 2;
-    const topY = y;
-    const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
-    const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
+  const cx = x + width / 2;
+  const topY = y;
+  const color = who === name ? SELF_BLUE : (strongColorMap.get(who) || "#EDEFF6");
+  const sub = `${fmtTime(sec)}｜${meta.year || "—"}`;
 
-    return (
-      <g pointerEvents="none">
-        <text x={cx} y={topY - 16} textAnchor="middle"
-              style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-          {who}
-        </text>
-        <text x={cx} y={topY - 2} textAnchor="middle"
-              style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
-          {sub}
-        </text>
-      </g>
-    );
-  };
+  return (
+    <g pointerEvents="none">
+      <text x={cx} y={topY - 16} textAnchor="middle"
+            style={{ fontWeight:800, fill:color, paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+        {who}
+      </text>
+      <text x={cx} y={topY - 2} textAnchor="middle"
+            style={{ fontWeight:700, fill:"#FFF", paintOrder:"stroke", stroke:"#0a0c10", strokeWidth:2 }}>
+        {sub}
+      </text>
+    </g>
+  );
+};
 
   // 供圖例用：只顯示藍色（你）與非灰色強勢選手
   const groupsLegendEntries = useMemo(()=>{
@@ -657,6 +658,10 @@ export default function Home(){
     });
     return out;
   }, [name, winnersGlobalCount, strongColorMap]);
+  // ① 放在 groupsLegendEntries 之後
+const legendNamesSet = useMemo(() => {
+  return new Set((groupsLegendEntries || []).map(e => e.name));
+}, [groupsLegendEntries]);
 
   /* ================== UI ================== */
 
