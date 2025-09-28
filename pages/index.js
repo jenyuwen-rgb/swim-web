@@ -100,6 +100,88 @@ const MULTI_PALETTE = [
   "#A3E635", "#F472B6", "#22D3EE", "#F59E0B"
 ];
 
+/* ================== 自由式小泳者載入動畫 ================== */
+const LoadingOverlay = ({ show }) => {
+  if (!show) return null;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(10,12,16,.72)",
+      backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 9999
+    }}>
+      <svg width="260" height="120" viewBox="0 0 260 120">
+        <defs>
+          <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#2a60ff" /><stop offset="1" stopColor="#234ad3" />
+          </linearGradient>
+        </defs>
+        <path d="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"
+          fill="none" stroke="url(#wave)" strokeWidth="4" opacity="0.5">
+          <animate attributeName="d" dur="1.8s" repeatCount="indefinite"
+            values="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70;
+                    M0 70 Q 30 80 60 70 T 120 70 T 180 70 T 240 70;
+                    M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70" />
+        </path>
+        <g>
+          <path id="arm" d="M0 0 C 8 -12, 26 -12, 34 0" fill="none" stroke="#EDEBE3" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="12" cy="8" r="4" fill="#EDEBE3" />
+          <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3" />
+          <circle cx="5" cy="22" r="1.4" fill="#7AD3F7">
+            <animate attributeName="cy" dur="0.8s" values="22;19;22" repeatCount="indefinite" />
+          </circle>
+        </g>
+        <g>
+          <g>
+            <use href="#arm" x="0" y="0">
+              <animateTransform attributeName="transform" type="rotate"
+                values="0 12 8; -35 12 8; 0 12 8"
+                dur="1.2s" repeatCount="indefinite" />
+            </use>
+          </g>
+          <g transform="translate(20,55)">
+            <g id="swimmer">
+              <circle cx="12" cy="8" r="4" fill="#EDEBE3" />
+              <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3" />
+              <use href="#arm" x="0" y="0">
+                <animateTransform attributeName="transform" type="rotate"
+                  values="0 12 8; -35 12 8; 0 12 8"
+                  dur="1.2s" repeatCount="indefinite" />
+              </use>
+            </g>
+            <animateTransform attributeName="transform" type="translate"
+              values="20,55; 200,55; 20,55"
+              dur="2.6s" repeatCount="indefinite" />
+          </g>
+        </g>
+        <text x="130" y="100" textAnchor="middle" fill="#E9DDBB" fontWeight="800" fontSize="14">
+          查詢中… 正在幫你游過資料池
+        </text>
+      </svg>
+    </div>
+  );
+};
+
+/* ---------- 自訂：分組柱狀圖圖例 ---------- */
+const GroupsLegend = ({ entries }) => {
+  if (!entries?.length) return null;
+  return (
+    <div style={{
+      display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center",
+      padding: "6px 2px", color: "#EDEBE3"
+    }}>
+      {entries.map(e => (
+        <div key={e.name} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            width: 12, height: 12, borderRadius: 999, background: e.color,
+            boxShadow: "0 0 0 1px rgba(0,0,0,.6) inset"
+          }} />
+          <span style={{ fontWeight: 800 }}>{e.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 /* ---------- 分組柱狀圖 Tooltip（顏色對齊 + 顯示姓名/成績/年份/賽事） ---------- */
 const GroupsTooltip = ({ active, label, payload, groupsChartKeys, groupsChartData, getBarColor }) => {
   if (!active || !payload?.length) return null;
@@ -232,17 +314,23 @@ export default function Home() {
 
   // 回傳最新 rk
   const refreshRankOnly = async () => {
-    const who = sanitizeName(name);
-    if (!isValidQueryName(who)) { setRankInfo(null); return null; }
-    const rkUrl = `${api}/api/rank?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
-    const signal = abortKey("rank");
-    const rr = await fetch(rkUrl, { signal });
-    if (rr.ok) {
-      const rk = await rr.json();
-      setRankInfo(rk || null);
-      return rk || null;
+    try {
+      const who = sanitizeName(name);
+      if (!isValidQueryName(who)) { setRankInfo(null); return null; }
+      const rkUrl = `${api}/api/rank?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
+      const signal = abortKey("rank");
+      const rr = await fetch(rkUrl, { signal });
+      if (rr.ok) {
+        const rk = await rr.json();
+        setRankInfo(rk || null);
+        return rk || null;
+      }
+      return null;
+    } catch (e) {
+      if (String(e?.name) === "AbortError") return null;
+      setErr(String(e?.message || e));
+      return null;
     }
-    return null;
   };
 
   async function search(cursor = 0) {
@@ -573,6 +661,19 @@ export default function Home() {
     );
   };
 
+  // 圖例資料（你＋強勢選手）
+  const groupsLegendEntries = useMemo(() => {
+    const out = [];
+    if (name) out.push({ name, color: SELF_BLUE });
+    const list = [];
+    (winnersGlobalCount || new Map()).forEach((times, who) => {
+      if (who && who !== name && times >= 2) list.push(who);
+    });
+    list.sort((a, b) => a.localeCompare(b, "zh-Hans"));
+    list.forEach(who => out.push({ name: who, color: strongColorMap.get(who) || "#EDEFF6" }));
+    return out;
+  }, [name, winnersGlobalCount, strongColorMap]);
+
   /* ================== UI ================== */
 
   const simplifyMeet = (s) => s || "";
@@ -729,21 +830,7 @@ export default function Home() {
           {rankTab === "groups" && (
             <>
               {/* 圖例：你(藍) + 強勢選手(彩) */}
-              <GroupsLegend
-                entries={useMemo(() => {
-                  const out = [];
-                  if (name) out.push({ name, color: SELF_BLUE });
-                  const list = [];
-                  (winnersGlobalCount || new Map()).forEach((times, who) => {
-                    if (who && who !== name && times >= 2) list.push(who);
-                  });
-                  list.sort((a, b) => a.localeCompare(b, "zh-Hans"));
-                  list.forEach(who => {
-                    out.push({ name: who, color: strongColorMap.get(who) || "#EDEFF6" });
-                  });
-                  return out;
-                }, [name, winnersGlobalCount, strongColorMap])}
-              />
+              <GroupsLegend entries={groupsLegendEntries} />
 
               <div style={{ width: "100%", height: 400 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -995,67 +1082,6 @@ export default function Home() {
   );
 }
 
-/* ================== 載入動畫 ================== */
-const LoadingOverlay = ({ show }) => {
-  if (!show) return null;
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(10,12,16,.72)",
-      backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 9999
-    }}>
-      <svg width="260" height="120" viewBox="0 0 260 120">
-        <defs>
-          <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#2a60ff" /><stop offset="1" stopColor="#234ad3" />
-          </linearGradient>
-        </defs>
-        <path d="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"
-          fill="none" stroke="url(#wave)" strokeWidth="4" opacity="0.5">
-          <animate attributeName="d" dur="1.8s" repeatCount="indefinite"
-            values="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70;
-                    M0 70 Q 30 80 60 70 T 120 70 T 180 70 T 240 70;
-                    M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70" />
-        </path>
-        <g>
-          <path id="arm" d="M0 0 C 8 -12, 26 -12, 34 0" fill="none" stroke="#EDEBE3" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="12" cy="8" r="4" fill="#EDEBE3" />
-          <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3" />
-          <circle cx="5" cy="22" r="1.4" fill="#7AD3F7">
-            <animate attributeName="cy" dur="0.8s" values="22;19;22" repeatCount="indefinite" />
-          </circle>
-        </g>
-        <g>
-          <g>
-            <use href="#arm" x="0" y="0">
-              <animateTransform attributeName="transform" type="rotate"
-                values="0 12 8; -35 12 8; 0 12 8"
-                dur="1.2s" repeatCount="indefinite" />
-            </use>
-          </g>
-          <g transform="translate(20,55)">
-            <g id="swimmer">
-              <circle cx="12" cy="8" r="4" fill="#EDEBE3" />
-              <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3" />
-              <use href="#arm" x="0" y="0">
-                <animateTransform attributeName="transform" type="rotate"
-                  values="0 12 8; -35 12 8; 0 12 8"
-                  dur="1.2s" repeatCount="indefinite" />
-              </use>
-            </g>
-            <animateTransform attributeName="transform" type="translate"
-              values="20,55; 200,55; 20,55"
-              dur="2.6s" repeatCount="indefinite" />
-          </g>
-        </g>
-        <text x="130" y="100" textAnchor="middle" fill="#E9DDBB" fontWeight="800" fontSize="14">
-          查詢中… 正在幫你游過資料池
-        </text>
-      </svg>
-    </div>
-  );
-};
-
 /* ---------- UI bits ---------- */
 const Card = ({ children }) => (
   <section style={{
@@ -1066,76 +1092,4 @@ const Card = ({ children }) => (
 );
 const MiniCard = ({ children }) => (
   <div style={{
-    background: "linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26,.95)) padding-box, linear-gradient(180deg, #313641, #161a20) border-box",
-    border: "1px solid transparent", borderRadius: 12, boxShadow: "inset 0 1px 0 rgba(255,255,255,.03)", padding: 12
-  }}>{children}</div>
-);
-const SectionTitle = ({ children }) => (
-  <div style={{ fontWeight: 800, letterSpacing: .5, color: "#EDEBE3", marginBottom: 6, textShadow: "0 1px 0 rgba(0,0,0,.6)" }}>{children}</div>
-);
-const KV = ({ label, value, small }) => (
-  <div style={{ marginRight: 24 }}>
-    <div style={{ fontSize: small ? 12 : 13, color: "#AEB4BF" }}>{label}</div>
-    <div style={{ fontSize: small ? 16 : 20, fontWeight: 800, color: "#FFFFFF", textShadow: "0 1px 0 rgba(0,0,0,.8)" }}>
-      {value ?? "-"}
-    </div>
-  </div>
-);
-
-/* ---------- styles ---------- */
-const inp = {
-  background: "linear-gradient(180deg, #191c22, #12151a)",
-  border: "1px solid #2b2f36",
-  color: "#E9E9EC",
-  padding: "10px 12px",
-  borderRadius: 16,
-  outline: "none"
-};
-const btn = {
-  background: "linear-gradient(180deg, #2a60ff, #234ad3) padding-box, linear-gradient(180deg, #5b7cff, #1a2a6e) border-box",
-  border: "1px solid transparent",
-  color: "#fff",
-  fontWeight: 800,
-  padding: "10px 16px",
-  borderRadius: 10,
-  boxShadow: "0 6px 14px rgba(50,90,255,.35)",
-  cursor: "pointer"
-};
-const tabBtn = {
-  background: "linear-gradient(180deg, #1a1e25, #12151a)",
-  border: "1px solid #313744",
-  color: "#d9dde7",
-  fontWeight: 800,
-  padding: "6px 12px",
-  borderRadius: 10,
-  cursor: "pointer"
-};
-const tabBtnActive = {
-  background: "linear-gradient(180deg, #2a60ff, #234ad3)",
-  border: "1px solid #4163ff",
-  color: "#fff",
-  boxShadow: "0 6px 14px rgba(50,90,255,.35)"
-};
-const table = {
-  width: "100%",
-  marginTop: 8,
-  borderCollapse: "separate",
-  borderSpacing: 0,
-  background: "linear-gradient(180deg, rgba(26,29,35,.85), rgba(14,16,20,.95)) padding-box, linear-gradient(180deg, #2b2f36, #171a1f) border-box",
-  border: "1px solid transparent",
-  borderRadius: 12,
-  overflow: "hidden"
-};
-const th = {
-  textAlign: "left",
-  fontWeight: 800,
-  color: "#F0F3FA",
-  padding: "10px 12px",
-  borderBottom: "1px solid #2c3037",
-  background: "rgba(255,255,255,.03)"
-};
-const td = {
-  color: "#E9E9EC",
-  padding: "10px 12px",
-  borderBottom: "1px solid #232830"
-};
+    background: "linear-gradient(180deg, rgba(32,36,44,.85), rgba(18,21,26
