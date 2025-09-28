@@ -637,11 +637,10 @@ export default function Home(){
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr auto", gap:8, marginBottom:12 }}>
           <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
           <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
-            {["50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式","100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式","200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"].map(x=>
-              <option key={x} value={x}>{x}</option>
-            ))}
-          </select>
-          <button
+  {["50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式","100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式","200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"].map(x => (
+    <option key={x} value={x}>{x}</option>
+  ))}
+</select>          <button
             onClick={()=>{
               const who = sanitizeName(name);
               if (!isValidQueryName(who)) {
