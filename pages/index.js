@@ -19,6 +19,16 @@ const tooltipStyles = {
   itemStyle: { color: "#E5E7EB", fontWeight: 700 }
 };
 
+/* ---------- 輸入清理/過濾 ---------- */
+const stripEmoji = (s="") =>
+  s.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "");
+const sanitizeName = (s="") => stripEmoji(s).trim();
+const isValidQueryName = (s="") => {
+  const t = sanitizeName(s);
+  if (t.length < 2) return false;
+  return /[\p{Script=Han}A-Za-z0-9]/u.test(t);
+};
+
 /* ---------- helpers ---------- */
 const fmtTimeMMSS = (s) => {
   const v = Number(s);
@@ -100,14 +110,11 @@ const LoadingOverlay = ({ show }) => {
       zIndex:9999
     }}>
       <svg width="260" height="120" viewBox="0 0 260 120">
-        {/* 水波（和網站色系：藍紫） */}
         <defs>
           <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0" stopColor="#2a60ff"/><stop offset="1" stopColor="#234ad3"/>
           </linearGradient>
         </defs>
-
-        {/* 波紋 */}
         <path d="M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"
               fill="none" stroke="url(#wave)" strokeWidth="4" opacity="0.5">
           <animate attributeName="d" dur="1.8s" repeatCount="indefinite"
@@ -115,21 +122,14 @@ const LoadingOverlay = ({ show }) => {
                            M0 70 Q 30 80 60 70 T 120 70 T 180 70 T 240 70;
                            M0 70 Q 30 60 60 70 T 120 70 T 180 70 T 240 70"/>
         </path>
-
-        {/* 自由式小泳者（簡化路徑） */}
         <g>
-          {/* 手臂 */}
           <path id="arm" d="M0 0 C 8 -12, 26 -12, 34 0" fill="none" stroke="#EDEBE3" strokeWidth="3" strokeLinecap="round"/>
-          {/* 身體與頭 */}
           <circle cx="12" cy="8" r="4" fill="#EDEBE3"/>
           <rect x="8" y="12" width="18" height="4" rx="2" fill="#EDEBE3"/>
-          {/* 腳踢小氣泡 */}
           <circle cx="5" cy="22" r="1.4" fill="#7AD3F7">
             <animate attributeName="cy" dur="0.8s" values="22;19;22" repeatCount="indefinite"/>
           </circle>
         </g>
-
-        {/* 群組做水平來回（往返游） */}
         <g>
           <g>
             <use href="#arm" x="0" y="0">
@@ -153,8 +153,6 @@ const LoadingOverlay = ({ show }) => {
                               dur="2.6s" repeatCount="indefinite"/>
           </g>
         </g>
-
-        {/* 提示文字 */}
         <text x="130" y="100" textAnchor="middle" fill="#E9DDBB" fontWeight="800" fontSize="14">
           查詢中… 正在幫你游過資料池
         </text>
@@ -196,6 +194,15 @@ export default function Home(){
   const chartBoxRef = useRef(null);
   const draggingRef = useRef({ active:false, startY:0, startShift:0 });
 
+  // === 集中管理 AbortController（放在元件內） ===
+  const acRef = useRef({ summary:null, rank:null, groups:null, compare:null });
+  const abortKey = (k) => {
+    const ac = acRef.current[k];
+    if (ac) ac.abort();
+    acRef.current[k] = new AbortController();
+    return acRef.current[k].signal;
+  };
+
   const onWheelRight = (e) => {
     e.preventDefault();
     const step = (rightBase.span || 1) / 2;
@@ -207,18 +214,18 @@ export default function Home(){
   const onPointerMove = (e) => {
     if (!draggingRef.current.active || !chartBoxRef.current) return;
     const rect = chartBoxRef.current.getBoundingClientRect();
-    
     const secPerPx = (rightBase.span || 10) / Math.max(rect.height, 1);
     const px = e.clientY - draggingRef.current.startY;
-  
     setRightShift(draggingRef.current.startShift + px * secPerPx);
   };
   const onPointerUp = () => { draggingRef.current.active = false; };
 
   const loadOpponentTrend = async (who, baseStartT) => {
-    if (!who) { setCompareTrend([]); return; }
-    const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=0`;
-    const r = await fetch(u);
+    const target = sanitizeName(who);
+    if (!isValidQueryName(target)) { setCompareTrend([]); return; }
+    const u = `${api}/api/summary?name=${encodeURIComponent(target)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=0`;
+    const signal = abortKey("compare");
+    const r = await fetch(u, { signal });
     if (!r.ok) throw new Error("compare summary 失敗");
     const j = await r.json();
     const opp = (j.trend?.points||[])
@@ -232,8 +239,11 @@ export default function Home(){
   };
 
   const loadGroups = async () => {
-    const u = `${api}/api/groups?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}`;
-    const r = await fetch(u);
+    const who = sanitizeName(name);
+    if (!isValidQueryName(who)) { setGroupsData(null); return; }
+    const u = `${api}/api/groups?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}`;
+    const signal = abortKey("groups");
+    const r = await fetch(u, { signal });
     if (!r.ok) { setGroupsData(null); return; }
     const j = await r.json();
     setGroupsData(j || null);
@@ -241,8 +251,11 @@ export default function Home(){
 
   // 回傳最新 rk
   const refreshRankOnly = async () => {
-    const rkUrl = `${api}/api/rank?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
-    const rr = await fetch(rkUrl);
+    const who = sanitizeName(name);
+    if (!isValidQueryName(who)) { setRankInfo(null); return null; }
+    const rkUrl = `${api}/api/rank?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&ageTol=${ageTol}`;
+    const signal = abortKey("rank");
+    const rr = await fetch(rkUrl, { signal });
     if (rr.ok) {
       const rk = await rr.json();
       setRankInfo(rk || null);
@@ -251,111 +264,110 @@ export default function Home(){
     return null;
   };
 
- async function search(cursor = 0) {
-  setErr("");
+  async function search(cursor = 0) {
+    setErr("");
+    if (!api) { alert("未設定 NEXT_PUBLIC_API_URL"); return; }
 
-  // 先檢查 API，再決定要不要進入 loading
-  if (!api) {
-    alert("未設定 NEXT_PUBLIC_API_URL");
-    return;
-  }
-
-  setLoading(true);
-
-  // 首頁查詢時先清空
-  if (cursor === 0) {
-    setItems([]);
-    setTrend([]);
-    setRankInfo(null);
-    setCompareTrend([]);
-    setGroupsData(null);
-  }
-
-  try {
-    // 1) summary（自己）
-    const u = `${api}/api/summary?name=${encodeURIComponent(name)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
-    const r = await fetch(u);
-    if (!r.ok) throw new Error("summary 取得失敗");
-    const j = await r.json();
-
-    const newItems = (j.items || []).slice();
-
-    const me = (j.trend?.points || [])
-      .filter(p => p.seconds > 0 && p.year)
-      .map(p => {
-        const d = parseYYYYMMDD(p.year);
-        return { x: p.year, t: d.getTime(), label: tToLabel(d.getTime()), y: p.seconds, d };
-      })
-      .sort((a, b) => a.d - b.d);
-    setTrend(me);
-
-    // PB（排冬短）供表格標紅
-    let pbSeconds = null;
-    for (const it of newItems) {
-      if (isWinterShortCourse(it["賽事名稱"])) continue;
-      const s = Number(it.seconds);
-      if (!Number.isFinite(s) || s <= 0) continue;
-      if (pbSeconds === null || s < pbSeconds) pbSeconds = s;
-    }
-    for (const it of newItems) {
-      const s = Number(it.seconds);
-      it.is_pb = (pbSeconds != null && Number.isFinite(s) && s === pbSeconds);
+    const who = sanitizeName(name);
+    if (!isValidQueryName(who)) {
+      setErr("請輸入至少 2 個有效字元的姓名（避免大量符號/emoji）。");
+      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]); setGroupsData(null);
+      return;
     }
 
-    setItems(cursor === 0 ? newItems : [...items, ...newItems]);
-    setNext(j.nextCursor ?? null);
-    setAnalysis(j.analysis || {});
-    setFamStats(j.family || {});
+    setLoading(true);
 
-    // 2) rank（Top10）
-    const rkLatest = await refreshRankOnly();
     if (cursor === 0) {
-      const defOpp = (rkLatest?.top?.[0]?.name) || "";
-      const willUse = compareName || defOpp;
-      if (!compareName && defOpp) setCompareName(defOpp);
-      if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
+      setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]); setGroupsData(null);
     }
 
-    // 3) groups（分組柱狀圖）
-    if (cursor === 0) await loadGroups();
+    try {
+      // 1) summary（自己）
+      const u = `${api}/api/summary?name=${encodeURIComponent(who)}&stroke=${encodeURIComponent(stroke)}&pool=${pool}&limit=500&cursor=${cursor}`;
+      const signal = abortKey("summary");
+      const r = await fetch(u, { signal });
+      if (!r.ok) throw new Error("summary 取得失敗");
+      const j = await r.json();
 
-  } catch (e) {
-    setErr(String(e?.message || e));
-  } finally {
-    // 無論成功或失敗，都關掉 loading
-    setLoading(false);
+      const newItems = (j.items || []).slice();
+
+      const me = (j.trend?.points || [])
+        .filter(p => p.seconds > 0 && p.year)
+        .map(p => {
+          const d = parseYYYYMMDD(p.year);
+          return { x: p.year, t: d.getTime(), label: tToLabel(d.getTime()), y: p.seconds, d };
+        })
+        .sort((a, b) => a.d - b.d);
+      setTrend(me);
+
+      // PB（排冬短）供表格標紅
+      let pbSeconds = null;
+      for (const it of newItems) {
+        if (isWinterShortCourse(it["賽事名稱"])) continue;
+        const s = Number(it.seconds);
+        if (!Number.isFinite(s) || s <= 0) continue;
+        if (pbSeconds === null || s < pbSeconds) pbSeconds = s;
+      }
+      for (const it of newItems) {
+        const s = Number(it.seconds);
+        it.is_pb = (pbSeconds != null && Number.isFinite(s) && s === pbSeconds);
+      }
+
+      setItems(cursor === 0 ? newItems : [...items, ...newItems]);
+      setNext(j.nextCursor ?? null);
+      setAnalysis(j.analysis || {});
+      setFamStats(j.family || {});
+
+      // 2) rank（Top10）
+      const rkLatest = await refreshRankOnly();
+      if (cursor === 0) {
+        const defOpp = (rkLatest?.top?.[0]?.name) || "";
+        const willUse = compareName || defOpp;
+        if (!compareName && defOpp) setCompareName(defOpp);
+        if (willUse) await loadOpponentTrend(willUse, me.length ? me[0].t : null);
+      }
+
+      // 3) groups（分組柱狀圖）
+      if (cursor === 0) await loadGroups();
+
+    } catch (e) {
+      if (String(e?.name) === "AbortError") return;
+      setErr(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
   }
-}
-  // 初次載入
-  //useEffect(()=>{ search(0); /* eslint-disable-next-line */ },[]);
 
   // ageTol/name/stroke 變更時自動更新 Top10
   useEffect(() => {
     if (!api) return;
+    if (!isValidQueryName(name)) { setRankInfo(null); return; }
     (async () => { await refreshRankOnly(); })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageTol, name, stroke]);
 
   // 切換對照選手或泳姿 → 重抓對照趨勢
   useEffect(()=>{
     (async ()=>{
       if (!api || !compareName) { setCompareTrend([]); return; }
+      if (!isValidQueryName(compareName)) { setCompareTrend([]); return; }
       try{
         await loadOpponentTrend(compareName, trend.length ? trend[0].t : null);
       }catch{
         setCompareTrend([]);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareName, stroke]);
 
   // 切換姓名/項目 → 重新載入分組資料
   useEffect(()=>{
     (async ()=>{
       if (!api) return;
+      if (!isValidQueryName(name)) { setGroupsData(null); return; } 
       try{ await loadGroups(); }catch{ setGroupsData(null); }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, stroke]);
 
   // PB點（自己）
@@ -385,8 +397,7 @@ export default function Home(){
     return Array.from(byT.values());
   },[mergedX, trend, compareTrend]);
 
-
-  // 左軸 domain：下限 = min - (max - min)/2，上限 = max
+  // 左軸 domain
   const leftDomain = useMemo(() => {
     let lmin = +Infinity, lmax = -Infinity;
     for (const p of chartData) {
@@ -394,12 +405,12 @@ export default function Home(){
       if (typeof p.opp === "number") { lmin = Math.min(lmin, p.opp); lmax = Math.max(lmax, p.opp); }
     }
     if (!Number.isFinite(lmin)) return ["auto", "auto"];
-    const span = Math.max(lmax - lmin, 1);      // 避免 0 跨度
-    const lower = Math.max(0, lmin - span / 2); // 時間不會小於 0
+    const span = Math.max(lmax - lmin, 1);
+    const lower = Math.max(0, lmin - span / 2);
     return [lower, lmax];
   }, [chartData]);
-  
-  /* ===== 右軸 domain：先計基準，再加位移 ===== */
+
+  /* 右軸 domain：先計基準，再加位移 */
   const rightBase = useMemo(()=>{
     let lmin = +Infinity, lmax = -Infinity, dmin = +Infinity, dmax = -Infinity;
     for(const p of chartData){
@@ -426,8 +437,7 @@ export default function Home(){
   },[rightBase, rightShift]);
 
   // 圖例顯示文字
-  const oppRank =
-    (rankInfo?.top || []).find(x => x.name === compareName)?.rank;
+  const oppRank = (rankInfo?.top || []).find(x => x.name === compareName)?.rank;
   const legendMap = {
     my: name || "輸入選手",
     opp: compareName ? `#${oppRank ?? "?"} ${compareName}` : "對照",
@@ -629,7 +639,21 @@ export default function Home(){
               <option key={x} value={x}>{x}</option>
             )}
           </select>
-          <button onClick={()=>{ setRightShift(0); search(0); }} disabled={loading} style={btn}>查詢</button>
+          <button
+            onClick={()=>{
+              const who = sanitizeName(name);
+              if (!isValidQueryName(who)) {
+                setErr("請輸入至少 2 個有效字元的姓名（避免大量符號/emoji）。");
+                return;
+              }
+              setRightShift(0);
+              search(0);
+            }}
+            disabled={loading}
+            style={btn}
+          >
+            查詢
+          </button>
         </div>
 
         {err && <div style={{ color:"#ffb3b3", marginBottom:8 }}>查詢失敗：{err}</div>}
@@ -639,9 +663,8 @@ export default function Home(){
           <SectionTitle>成績分析</SectionTitle>
           <div style={{ display:"flex", gap:32, marginTop:8, flexWrap:"wrap" }}>
             <KV label="出賽次數" value={`${analysis?.meetCount ?? 0} 場`}/>
-            
             <KV label="平均成績" value={fmtTimeMMSS(analysis?.avg_seconds)}/>
-<KV label="最佳成績 (PB)" value={fmtTimeMMSS(analysis?.pb_seconds)}/>
+            <KV label="最佳成績 (PB)" value={fmtTimeMMSS(analysis?.pb_seconds)}/>
             <KV label="WA Points" value={analysis?.wa_points != null ? Math.round(analysis.wa_points) : "-"} />
           </div>
         </Card>
@@ -856,7 +879,7 @@ export default function Home(){
                 />
                 <YAxis
                   yAxisId="left"
-                                    tickFormatter={fmtTimeMMSS}
+                  tickFormatter={fmtTimeMMSS}
                   domain={leftDomain}
                   tick={{ fill:"#d9dde7", fontSize:12, fontWeight:700 }}
                   axisLine={{ stroke:"#3a3f48" }} tickLine={{ stroke:"#3a3f48" }}
@@ -875,8 +898,6 @@ export default function Home(){
                 <Tooltip
                   {...tooltipStyles}
                   formatter={(v, k)=> {
-                    
-                    
                     if (k === "my")  return [fmtTimeMMSS(v), name];
                     if (k === "opp") return [fmtTimeMMSS(v), compareName ? `#${(rankInfo?.top||[]).find(x=>x.name===compareName)?.rank ?? "?"} ${compareName}` : "對照"];
                     if (k === "diff") return [`${Number(v).toFixed(2)} s`, "差（我-對照）"];
