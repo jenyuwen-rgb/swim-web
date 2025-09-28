@@ -161,7 +161,7 @@ const LoadingOverlay = ({ show }) => {
   );
 };
 
-/* ---------- 自訂：分組柱狀圖圖例（只顯示藍色＆非灰色強勢選手） ---------- */
+/* ---------- 自訂：分組柱狀圖圖例 ---------- */
 const GroupsLegend = ({ entries }) => {
   if (!entries?.length) return null;
   return (
@@ -176,6 +176,44 @@ const GroupsLegend = ({ entries }) => {
             boxShadow:"0 0 0 1px rgba(0,0,0,.6) inset"
           }}/>
           <span style={{ fontWeight:800 }}>{e.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/* ---------- 分組柱狀圖 Tooltip（修復：未定義） ---------- */
+const GroupsTooltip = ({ active, label, payload }) => {
+  if (!active || !payload || !payload.length) return null;
+
+  const rows = payload
+    .map(p => {
+      const dk = p?.dataKey;
+      const row = p?.payload || {};
+      const meta = row?.[`meta_${dk}`] || {};
+      const who = meta.name || "";
+      const sec = Number(meta.seconds);
+      const year = meta.year || "";
+      if (!who || !Number.isFinite(sec)) return null;
+      return { who, sec, year, color: p.color || "#EDEFF6" };
+    })
+    .filter(Boolean);
+
+  if (!rows.length) return null;
+
+  return (
+    <div style={{ ...tooltipStyles.contentStyle, borderRadius:8, minWidth:180 }}>
+      <div style={{ ...tooltipStyles.labelStyle, marginBottom:6, fontSize:12 }}>
+        {label}
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display:"flex", alignItems:"center", gap:8, margin:"4px 0" }}>
+          <span style={{ width:10, height:10, borderRadius:999, background:r.color }}/>
+          <div style={{ ...tooltipStyles.itemStyle, display:"flex", gap:6 }}>
+            <strong style={{ color:"#fff" }}>{r.who}</strong>
+            <span>{fmtTimeMMSS(r.sec)}</span>
+            <span style={{ opacity:.85 }}>｜{r.year || "—"}</span>
+          </div>
         </div>
       ))}
     </div>
@@ -365,7 +403,7 @@ export default function Home(){
     if (!api) return;
     if (!isValidQueryName(name)) { setRankInfo(null); return; }
     (async () => { await refreshRankOnly(); })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageTol, name, stroke]);
 
   // 切換對照選手或泳姿 → 重抓對照趨勢
@@ -379,7 +417,7 @@ export default function Home(){
         setCompareTrend([]);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareName, stroke]);
 
   // 切換姓名/項目 → 重新載入分組資料
@@ -389,7 +427,7 @@ export default function Home(){
       if (!isValidQueryName(name)) { setGroupsData(null); return; } 
       try{ await loadGroups(); }catch{ setGroupsData(null); }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, stroke]);
 
   // PB點（自己）
@@ -609,7 +647,6 @@ export default function Home(){
   const groupsLegendEntries = useMemo(()=>{
     const out = [];
     if (name) out.push({ name, color: SELF_BLUE });
-    // 強勢選手（跨組 >=2），使用 strongColorMap 色
     const list = [];
     (winnersGlobalCount || new Map()).forEach((times, who)=>{
       if (who && who !== name && times >= 2) list.push(who);
@@ -637,10 +674,15 @@ export default function Home(){
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1.2fr auto", gap:8, marginBottom:12 }}>
           <input value={name} onChange={(e)=>setName(e.target.value)} placeholder="姓名" style={inp}/>
           <select value={stroke} onChange={(e)=>setStroke(e.target.value)} style={inp}>
-  {["50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式","100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式","200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"].map(x => (
-    <option key={x} value={x}>{x}</option>
-  ))}
-</select>          <button
+            {[
+              "50公尺自由式","50公尺蛙式","50公尺仰式","50公尺蝶式",
+              "100公尺自由式","100公尺蛙式","100公尺仰式","100公尺蝶式",
+              "200公尺自由式","200公尺蛙式","200公尺仰式","200公尺蝶式","200公尺混合式"
+            ].map(x => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+          <button
             onClick={()=>{
               const who = sanitizeName(name);
               if (!isValidQueryName(who)) {
@@ -771,7 +813,6 @@ export default function Home(){
 
           {rankTab==="groups" && (
             <>
-              {/* 只顯示藍色＆非灰色強勢選手的圖例 */}
               <GroupsLegend entries={groupsLegendEntries} />
 
               <div style={{ width:"100%", height:400 }}>
