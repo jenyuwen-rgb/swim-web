@@ -283,6 +283,7 @@ export default function Home() {
   };
   const onPointerUp = () => { draggingRef.current.active = false; };
 
+  // 只在按下「顯示」時抓對照趨勢
   const loadOpponentTrend = async (who, baseStartT) => {
     const target = sanitizeName(who);
     if (!isValidQueryName(target)) { setCompareTrend([]); return; }
@@ -301,6 +302,7 @@ export default function Home() {
     setCompareTrend(baseStartT ? opp.filter(p => p.t >= baseStartT) : opp);
   };
 
+  // 只在按下「查詢」時抓分組排行
   const loadGroups = async () => {
     const who = sanitizeName(name);
     if (!isValidQueryName(who)) { setGroupsData(null); return; }
@@ -312,7 +314,7 @@ export default function Home() {
     setGroupsData(j || null);
   };
 
-  // 回傳最新 rk
+  // 只在按下「Refresh」時抓排行
   const refreshRankOnly = async () => {
     try {
       const who = sanitizeName(name);
@@ -333,6 +335,7 @@ export default function Home() {
     }
   };
 
+  // 只在按下「查詢」或「載入更多」時打後端
   async function search(cursor = 0) {
     setErr("");
     if (!api) { alert("未設定 NEXT_PUBLIC_API_URL"); return; }
@@ -348,7 +351,7 @@ export default function Home() {
 
     if (cursor === 0) {
       setItems([]); setTrend([]); setRankInfo(null); setCompareTrend([]); setGroupsData(null);
-      setCompareName(""); setCustomCompare(""); setRightShift(0);
+      setRightShift(0);
     }
 
     try {
@@ -388,18 +391,11 @@ export default function Home() {
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
 
-      // 2) rank（Top10）
-      await refreshRankOnly();
-
-      // 3) groups（分組柱狀圖）
+      // 2) groups（分組柱狀圖）— 僅首次頁面資料時載
       if (cursor === 0) await loadGroups();
 
-      // 4) 對照
-      if (cursor === 0) {
-        if (compareName) await loadOpponentTrend(compareName, me.length ? me[0].t : null);
-        else setCompareTrend([]);
-      }
-
+      // 3)（可選）若已經選好 compareName，使用者想一次看到對照，保留手動觸發：不自動呼叫。
+      // 使用者需在「成績趨勢」按下「顯示」才會抓對照。
     } catch (e) {
       if (String(e?.name) === "AbortError") return;
       setErr(String(e?.message || e));
@@ -408,37 +404,11 @@ export default function Home() {
     }
   }
 
-  // ageTol/name/stroke 變更時自動更新 Top10
-  useEffect(() => {
-    if (!api) return;
-    if (!isValidQueryName(name)) { setRankInfo(null); return; }
-    (async () => { await refreshRankOnly(); })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ageTol, name, stroke]);
-
-  // 切換對照選手或泳姿 → 重抓對照趨勢
-  useEffect(() => {
-    (async () => {
-      if (!api || !compareName) { setCompareTrend([]); return; }
-      if (!isValidQueryName(compareName)) { setCompareTrend([]); return; }
-      try {
-        await loadOpponentTrend(compareName, trend.length ? trend[0].t : null);
-      } catch {
-        setCompareTrend([]);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compareName, stroke]);
-
-  // 切換姓名/項目 → 重新載入分組資料
-  useEffect(() => {
-    (async () => {
-      if (!api) return;
-      if (!isValidQueryName(name)) { setGroupsData(null); return; }
-      try { await loadGroups(); } catch { setGroupsData(null); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, stroke]);
+  /* ======= 重要：移除所有「初始化 / name / stroke / ageTol 變更就打後端」的自動 useEffect =======
+     - 不自動 refreshRankOnly
+     - 不自動 loadGroups
+     - 不自動 loadOpponentTrend
+     下面只保留必要的 memo 與本地計算，完全不打後端。 */
 
   // PB點（自己）
   const pbPoint = useMemo(() => {
@@ -546,7 +516,7 @@ export default function Home() {
         rank: you.rank,
         name: you.name,
         seconds: you.pb_seconds,
-        year: you.year || you.pb_year || this?.ymd || you?.pb_yyyymmdd || "",
+        year: you.year || you.pb_year || you.ymd || you.pb_yyyymmdd || "",
         meet: you.meet || you.pb_meet || you.meet_name || you.event || "",
         isYou: true,
         color: SELF_BLUE
@@ -693,7 +663,7 @@ export default function Home() {
                 return;
               }
               setRightShift(0);
-              search(0);
+              search(0); // 只有按下查詢才打後端
             }}
             disabled={loading}
             style={btn}
@@ -884,7 +854,7 @@ export default function Home() {
                 value={compareName}
                 onChange={(e) => setCompareName(e.target.value)}
                 style={{ ...inp, padding: "8px 10px" }}
-                title="由對手排行 Top10 快速選擇對照選手"
+                title="由對手排行 Top10 快速選擇對照選手（不會自動查詢）"
               >
                 <option value="">（不顯示對照）</option>
                 {(rankInfo?.top || []).map((r) => (
@@ -899,10 +869,10 @@ export default function Home() {
               />
               <button
                 onClick={async () => {
-                  const w = (customCompare || "").trim();
-                  if (!w) return;
-                  setCompareName(w);
-                  try { await loadOpponentTrend(w, trend.length ? trend[0].t : null); } catch { setCompareTrend([]); }
+                  const w = (customCompare || compareName || "").trim();
+                  if (!w) { setCompareTrend([]); return; }
+                  try { await loadOpponentTrend(w, trend.length ? trend[0].t : null); }
+                  catch { setCompareTrend([]); }
                 }}
                 style={{ ...btn, padding: "8px 12px" }}
               >顯示</button>
@@ -977,7 +947,7 @@ export default function Home() {
                   labelFormatter={(t) => String(tToLabel(t))}
                 />
 
-                {/* 對照：綠線 */}
+                {/* 対照：綠線 */}
                 <Line
                   yAxisId="left"
                   type="monotone"
