@@ -390,6 +390,7 @@ export default function Home() {
       setNext(j.nextCursor ?? null);
       setAnalysis(j.analysis || {});
       setFamStats(j.family || {});
+      if (cursor === 0) await refreshRankOnly();
 
       // 2) groups（分組柱狀圖）— 僅首次頁面資料時載
       if (cursor === 0) await loadGroups();
