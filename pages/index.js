@@ -546,7 +546,7 @@ export default function Home() {
         rank: you.rank,
         name: you.name,
         seconds: you.pb_seconds,
-        year: you.year || you.pb_year || you.ymd || you.pb_yyyymmdd || "",
+        year: you.year || you.pb_year || this?.ymd || you?.pb_yyyymmdd || "",
         meet: you.meet || you.pb_meet || you.meet_name || you.event || "",
         isYou: true,
         color: SELF_BLUE
@@ -661,19 +661,6 @@ export default function Home() {
     );
   };
 
-  // 圖例資料（你＋強勢選手）
-  const groupsLegendEntries = useMemo(() => {
-    const out = [];
-    if (name) out.push({ name, color: SELF_BLUE });
-    const list = [];
-    (winnersGlobalCount || new Map()).forEach((times, who) => {
-      if (who && who !== name && times >= 2) list.push(who);
-    });
-    list.sort((a, b) => a.localeCompare(b, "zh-Hans"));
-    list.forEach(who => out.push({ name: who, color: strongColorMap.get(who) || "#EDEFF6" }));
-    return out;
-  }, [name, winnersGlobalCount, strongColorMap]);
-
   /* ================== UI ================== */
 
   const simplifyMeet = (s) => s || "";
@@ -778,59 +765,69 @@ export default function Home() {
           </div>
 
           {rankTab === "top" && (
-            <div style={{ color: "#BFC6D4", marginBottom: 8 }}>
-              分母：{rankInfo?.denominator ?? "-"}　你的名次：
-              <span style={{ color: "#FFD166", fontWeight: 800 }}>{rankInfo?.rank ?? "-"}</span>　
-              百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
-            </div>
-          )}
+            <>
+              <div style={{ color: "#BFC6D4", marginBottom: 8 }}>
+                分母：{rankInfo?.denominator ?? "-"}　你的名次：
+                <span style={{ color: "#FFD166", fontWeight: 800 }}>{rankInfo?.rank ?? "-"}</span>　
+                百分位：{rankInfo?.percentile ? `${rankInfo.percentile.toFixed(1)}%` : "-"}　年齡誤差：±{ageTol}
+              </div>
 
-          {rankTab === "top" && (
-            <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rankBarData} margin={{ top: 10, right: 10, bottom: 6, left: 10 }} isAnimationActive={false}>
-                  <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fill: "#d9dde7", fontSize: 12, fontWeight: 700 }} axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }} />
-                  <YAxis
-                    domain={barDomain}
-                    tickFormatter={fmtTimeMMSS}
-                    tick={{ fill: "#d9dde7", fontSize: 12, fontWeight: 700 }}
-                    axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }}
-                    width={64} label={{ value: "時間(PB)", angle: -90, position: "insideLeft", fill: "#d9dde7" }}
-                  />
-                  <Tooltip
-                    {...tooltipStyles}
-                    cursor={false}
-                    formatter={(v, _k, p) => {
-                      const row = p?.payload || {};
-                      const right = `${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"}`;
-                      return [fmtTimeMMSS(v), right];
-                    }}
-                    labelFormatter={(l, payload) => {
-                      const row = payload && payload[0] && payload[0].payload;
-                      return row?.label || String(l);
-                    }}
-                  />
-                  <Bar dataKey="seconds" radius={[6, 6, 0, 0]} isAnimationActive={false}>
-                    {rankBarData.map((row) => (
-                      <Cell key={row.key} fill={row.color} />
-                    ))}
-                    <LabelList
-                      dataKey="name"
-                      position="top"
-                      style={{ fill: "#fff", fontSize: 12, fontWeight: 800, textShadow: "0 1px 0 rgba(0,0,0,.7)" }}
-                      formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rankBarData} margin={{ top: 10, right: 10, bottom: 6, left: 10 }} isAnimationActive={false}>
+                    <CartesianGrid stroke="#2b2f36" strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tick={{ fill: "#d9dde7", fontSize: 12, fontWeight: 700 }} axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }} />
+                    <YAxis
+                      domain={barDomain}
+                      tickFormatter={fmtTimeMMSS}
+                      tick={{ fill: "#d9dde7", fontSize: 12, fontWeight: 700 }}
+                      axisLine={{ stroke: "#3a3f48" }} tickLine={{ stroke: "#3a3f48" }}
+                      width={64} label={{ value: "時間(PB)", angle: -90, position: "insideLeft", fill: "#d9dde7" }}
                     />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                    <Tooltip
+                      {...tooltipStyles}
+                      cursor={false}
+                      formatter={(v, _k, p) => {
+                        const row = p?.payload || {};
+                        const right = `${row.name || "—"}｜${row.year || "—"}｜${row.meet || "—"}`;
+                        return [fmtTimeMMSS(v), right];
+                      }}
+                      labelFormatter={(l, payload) => {
+                        const row = payload && payload[0] && payload[0].payload;
+                        return row?.label || String(l);
+                      }}
+                    />
+                    <Bar dataKey="seconds" radius={[6, 6, 0, 0]} isAnimationActive={false}>
+                      {rankBarData.map((row) => (
+                        <Cell key={row.key} fill={row.color} />
+                      ))}
+                      <LabelList
+                        dataKey="name"
+                        position="top"
+                        style={{ fill: "#fff", fontSize: 12, fontWeight: 800, textShadow: "0 1px 0 rgba(0,0,0,.7)" }}
+                        formatter={(v, entry) => (entry?.payload?.isYou ? `你 · ${v}` : v)}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
 
           {rankTab === "groups" && (
             <>
               {/* 圖例：你(藍) + 強勢選手(彩) */}
-              <GroupsLegend entries={groupsLegendEntries} />
+              <GroupsLegend entries={(() => {
+                const out = [];
+                if (name) out.push({ name, color: SELF_BLUE });
+                const list = [];
+                (winnersGlobalCount || new Map()).forEach((times, who) => {
+                  if (who && who !== name && times >= 2) list.push(who);
+                });
+                list.sort((a, b) => a.localeCompare(b, "zh-Hans"));
+                list.forEach(who => out.push({ name: who, color: strongColorMap.get(who) || "#EDEFF6" }));
+                return out;
+              })()} />
 
               <div style={{ width: "100%", height: 400 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1081,6 +1078,7 @@ export default function Home() {
     </main>
   );
 }
+
 /* ---------- UI bits ---------- */
 const inp = {
   background: "#1c1f26",
@@ -1155,4 +1153,3 @@ const MiniCard = ({ children }) => (
     {children}
   </div>
 );
-
